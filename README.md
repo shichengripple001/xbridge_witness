@@ -16,22 +16,49 @@ Attestation Server for XRPL Sidechains
 
 ## Dependencies
 
-### rippled inclusion
+### conan inclusion
 
-This project depends on the [rippled](https://github.com/ripple/rippled.git) repository for core signing functionality. If you have built and installed rippled, you can point this project at your installation using `CMAKE_PREFIX_PATH` (if you have installed in a standard system search path, this is not needed), e.g.:
+This project depends on conan to build it's dependencies. See https://conan.io/ to install conan.
 
+Once conan is installed, the following can be used to build the project:
+
+1) Create a build directory. For example: build/gcc.release
+2) Change to that directory.
+3) Run conan. The command I use is:
+
+``` bash
+conan install -b missing --settings build_type=Debug ../..
 ```
-$ cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=/path/to/rippled/installation/root ../..
+
+(Note: the exact command I use is as follows, but this assumes gcc 12 is used and a gcc12 conan profile is present):
+```bash
+CC=$(which gcc) CXX=$(which g++) conan install -b missing --profile gcc12 --settings build_type=Debug ../..
 ```
 
-Alternatively, if you do not have a local installation of rippled development files that you want to use, then this project will fetch an appropriate version of the source code using CMake's FetchContent.
+4) Create a build file (replace [path to project root] with the appropriate directory):
+
+``` bash
+cmake -DCMAKE_BUILD_TYPE=Debug -GNinja -Dunity=Off [path to project root]
+```
+
+
+(Note: the exact command I use is as follows, but this is specific to my setup:)
+``` bash
+CC=$(which gcc) CXX=$(which g++) cmake -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_EXPORT_COMPILE_COMMANDS=1 -DCMAKE_BUILD_TYPE=Debug -GNinja ..
+```
+
+5) Build the project:
+
+``` bash
+ninja
+```
 
 ### Other dependencies
 
-* C++17 or greater
-* [Boost](http://www.boost.org/) - 1.70+ required
+* C++20
+* [Boost](http://www.boost.org/) - 1.79 required
 * [OpenSSL](https://www.openssl.org/) 
-* [cmake](https://cmake.org) - 3.11+ required
+* [cmake](https://cmake.org)
 
 ## Build and run
 
