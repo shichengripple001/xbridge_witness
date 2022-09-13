@@ -513,8 +513,12 @@ Federator::pushAtt(
 {
     std::lock_guard bl{batchMutex_};
     curClaimAtts_.emplace_back(std::move(att));
-    // TODO: Replace magic number 8 with ripple "max attestations"
-    if (ledgerBoundary || curClaimAtts_.size() + curCreateAtts_.size() >= 8)
+    assert(
+        curClaimAtts_.size() + curCreateAtts_.size() <=
+        ripple::AttestationBatch::maxAttestations);
+    if (ledgerBoundary ||
+        curClaimAtts_.size() + curCreateAtts_.size() >=
+            ripple::AttestationBatch::maxAttestations)
         pushAttOnSubmitTxn(bridge);
 }
 
@@ -526,8 +530,12 @@ Federator::pushAtt(
 {
     std::lock_guard bl{batchMutex_};
     curCreateAtts_.emplace_back(std::move(att));
-    // TODO: Replace magic number 8 with ripple "max attestations"
-    if (ledgerBoundary || curClaimAtts_.size() + curCreateAtts_.size() >= 8)
+    assert(
+        curClaimAtts_.size() + curCreateAtts_.size() <=
+        ripple::AttestationBatch::maxAttestations);
+    if (ledgerBoundary ||
+        curClaimAtts_.size() + curCreateAtts_.size() >=
+            ripple::AttestationBatch::maxAttestations)
         pushAttOnSubmitTxn(bridge);
 }
 
