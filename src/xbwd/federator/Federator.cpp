@@ -17,11 +17,11 @@
 */
 //==============================================================================
 
-#include "xbwd/basics/ChainTypes.h"
 #include <xbwd/federator/Federator.h>
 
 #include <xbwd/app/App.h>
 #include <xbwd/app/DBInit.h>
+#include <xbwd/basics/ChainTypes.h>
 #include <xbwd/federator/TxnSupport.h>
 
 #include <ripple/basics/strHex.h>
@@ -212,7 +212,8 @@ Federator::onEvent(event::XChainCommitDetected const& e)
     auto const& rewardAccount = chains_[dstChain].rewardAccount_;
     auto const& optDst = e.otherChainDst_;
 
-    auto const claimOpt =
+    // non-const so it may be moved from
+    auto claimOpt =
         [&]() -> std::optional<ripple::AttestationBatch::AttestationClaim> {
         if (!success)
             return std::nullopt;
@@ -311,7 +312,7 @@ Federator::onEvent(event::XChainCommitDetected const& e)
 
     if (claimOpt)
     {
-        pushTxn(e.bridge_, *claimOpt);
+        pushAtt(e.bridge_, std::move(*claimOpt), e.ledgerBoundary_);
     }
 }
 
@@ -353,7 +354,8 @@ Federator::onEvent(event::XChainAccountCreateCommitDetected const& e)
     auto const& rewardAccount = chains_[dstChain].rewardAccount_;
     auto const& dst = e.otherChainDst_;
 
-    auto const createOpt = [&]()
+    // non-const so it may be moved from
+    auto createOpt = [&]()
         -> std::optional<ripple::AttestationBatch::AttestationCreateAccount> {
         if (!success)
             return std::nullopt;
@@ -463,7 +465,7 @@ Federator::onEvent(event::XChainAccountCreateCommitDetected const& e)
     }
     if (createOpt)
     {
-        pushTxn(e.bridge_, *createOpt);
+        pushAtt(e.bridge_, std::move(*createOpt), e.ledgerBoundary_);
     }
 }
 
@@ -480,16 +482,21 @@ Federator::onEvent(event::HeartbeatTimer const& e)
 }
 
 void
-Federator::pushTxn(
-    ripple::STXChainBridge const& bridge,
-    ripple::AttestationBatch::AttestationClaim const& att)
+Federator::pushAttOnSubmitTxn(ripple::STXChainBridge const& bridge)
 {
+    // batch mutex must already be held
     bool notify = false;
     {
-        std::lock_guard l{txnsMutex_};
+        std::lock_guard tl{txnsMutex_};
         notify = txns_.empty();
-        ripple::STXChainAttestationBatch batch{bridge, &att, &att + 1};
-        txns_.push_back(batch);
+        txns_.push_back(ripple::STXChainAttestationBatch{
+            bridge,
+            curClaimAtts_.begin(),
+            curClaimAtts_.end(),
+            curCreateAtts_.begin(),
+            curCreateAtts_.end()});
+        curClaimAtts_.clear();
+        curCreateAtts_.clear();
     }
     if (notify)
     {
@@ -499,23 +506,29 @@ Federator::pushTxn(
 }
 
 void
-Federator::pushTxn(
+Federator::pushAtt(
     ripple::STXChainBridge const& bridge,
-    ripple::AttestationBatch::AttestationCreateAccount const& att)
+    ripple::AttestationBatch::AttestationClaim&& att,
+    bool ledgerBoundary)
 {
-    bool notify = false;
-    {
-        std::lock_guard l{txnsMutex_};
-        notify = txns_.empty();
-        ripple::AttestationBatch::AttestationClaim const* np = nullptr;
-        ripple::STXChainAttestationBatch batch{bridge, np, np, &att, &att + 1};
-        txns_.push_back(batch);
-    }
-    if (notify)
-    {
-        std::lock_guard l(cvMutexes_[lt_event]);
-        cvs_[lt_event].notify_one();
-    }
+    std::lock_guard bl{batchMutex_};
+    curClaimAtts_.emplace_back(std::move(att));
+    // TODO: Replace magic number 8 with ripple "max attestations"
+    if (ledgerBoundary || curClaimAtts_.size() + curCreateAtts_.size() >= 8)
+        pushAttOnSubmitTxn(bridge);
+}
+
+void
+Federator::pushAtt(
+    ripple::STXChainBridge const& bridge,
+    ripple::AttestationBatch::AttestationCreateAccount&& att,
+    bool ledgerBoundary)
+{
+    std::lock_guard bl{batchMutex_};
+    curCreateAtts_.emplace_back(std::move(att));
+    // TODO: Replace magic number 8 with ripple "max attestations"
+    if (ledgerBoundary || curClaimAtts_.size() + curCreateAtts_.size() >= 8)
+        pushAttOnSubmitTxn(bridge);
 }
 
 void

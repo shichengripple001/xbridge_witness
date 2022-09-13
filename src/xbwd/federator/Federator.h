@@ -29,6 +29,7 @@
 #include <ripple/json/json_value.h>
 #include <ripple/protocol/PublicKey.h>
 #include <ripple/protocol/STXChainAttestationBatch.h>
+#include <ripple/protocol/STXChainBridge.h>
 #include <ripple/protocol/SecretKey.h>
 
 #include <boost/asio.hpp>
@@ -86,6 +87,19 @@ class Federator : public std::enable_shared_from_this<Federator>
     mutable std::array<std::mutex, lt_last> loopMutexes_;
     std::array<bool, lt_last> loopLocked_;
     std::array<std::condition_variable, lt_last> loopCvs_;
+
+    mutable std::mutex batchMutex_;
+    // in-progress batches (one collection for each attestation type). Will be
+    // submitted when either all the transactions from that ledger are
+    // collected, or the batch limit is reached
+    // Both collections are guarded by the same mutex because both collections
+    // need to be locked to check the total size, and 2) given the events likely
+    // come from the same thread there should never be lock contention when
+    // adding to the collections
+    std::vector<ripple::AttestationBatch::AttestationClaim> GUARDED_BY(
+        batchMutex_) curClaimAtts_;
+    std::vector<ripple::AttestationBatch::AttestationCreateAccount> GUARDED_BY(
+        batchMutex_) curCreateAtts_;
 
     beast::Journal j_;
 
@@ -151,14 +165,21 @@ private:
     onEvent(event::HeartbeatTimer const& e);
 
     void
-    pushTxn(
+    pushAtt(
         ripple::STXChainBridge const& bridge,
-        ripple::AttestationBatch::AttestationClaim const& att);
+        ripple::AttestationBatch::AttestationClaim&& att,
+        bool ledgerBoundary);
 
     void
-    pushTxn(
+    pushAtt(
         ripple::STXChainBridge const& bridge,
-        ripple::AttestationBatch::AttestationCreateAccount const& att);
+        ripple::AttestationBatch::AttestationCreateAccount&& att,
+        bool ledgerBoundary);
+
+    // Code to run from `pushAtt` when submitting a transaction
+    void
+    pushAttOnSubmitTxn(ripple::STXChainBridge const& bridge)
+        REQUIRES(batchMutex_) EXCLUDES(txnsMutex_, cvMutexes_);
 
     void
     submitTxn(ripple::STXChainAttestationBatch const& batch);
