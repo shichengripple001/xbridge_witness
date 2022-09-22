@@ -754,7 +754,7 @@ Federator::mainLoop()
     auto const lt = lt_event;
     {
         std::unique_lock l{loopMutexes_[lt]};
-        loopCvs_[lt].wait(l, [this] { return !loopLocked_[lt]; });
+        loopCvs_[lt].wait(l, [this, lt] { return !loopLocked_[lt]; });
     }
 
     std::vector<FederatorEvent> localEvents;
@@ -808,7 +808,7 @@ Federator::txnSubmitLoop()
     auto const lt = lt_txnSubmit;
     {
         std::unique_lock l{loopMutexes_[lt]};
-        loopCvs_[lt].wait(l, [this] { return !loopLocked_[lt]; });
+        loopCvs_[lt].wait(l, [this, lt] { return !loopLocked_[lt]; });
     }
 
     // return if ready to submit txn
