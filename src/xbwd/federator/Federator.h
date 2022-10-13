@@ -36,6 +36,7 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <deque>
 #include <list>
 #include <memory>
 #include <optional>
@@ -87,12 +88,13 @@ class Federator : public std::enable_shared_from_this<Federator>
         std::shared_ptr<ChainListener> listener_;
         ripple::AccountID rewardAccount_;
         std::optional<config::TxnSubmit> txnSubmit_;
+        std::optional<ripple::uint256> lastAttestedCommitTx_;
         bool ignoreSignerList_ = false;
-
         explicit Chain(config::ChainConfig const& config);
     };
 
     ChainArray<Chain> chains_;
+    ChainArray<bool const> const autoSubmit_;  // event thread only
 
     mutable std::mutex eventsMutex_;
     std::vector<FederatorEvent> GUARDED_BY(eventsMutex_) events_;
@@ -134,10 +136,22 @@ class Federator : public std::enable_shared_from_this<Federator>
         GUARDED_BY(batchMutex_) curClaimAtts_;
     ChainArray<std::vector<ripple::AttestationBatch::AttestationCreateAccount>>
         GUARDED_BY(batchMutex_) curCreateAtts_;
-    ChainArray<std::atomic<uint32_t>> ledgerIndexes_{0u, 0u};
-    ChainArray<std::atomic<uint32_t>> ledgerFees_{0u, 0u};
-    ChainArray<uint32_t> accountSqns_{0u, 0u};  // submission thread only
+    ChainArray<std::atomic<std::uint32_t>> ledgerIndexes_{0u, 0u};
+    ChainArray<std::atomic<std::uint32_t>> ledgerFees_{0u, 0u};
+    ChainArray<std::uint32_t> accountSqns_{0u, 0u};  // tx submit thread only
 
+    struct InitSync
+    {
+        std::atomic<bool> syncing_{true};
+        ripple::uint256 dbTxnHash_;
+        std::uint32_t dbLedgerSqn_{0u};
+        bool historyDone_{false};
+        bool oldTxExpired_{false};
+        std::int32_t rpcOrder_{std::numeric_limits<std::int32_t>::min()};
+    };
+
+    ChainArray<InitSync> initSync_;
+    ChainArray<std::deque<FederatorEvent>> replays_;
     beast::Journal j_;
 
 public:
@@ -211,6 +225,19 @@ private:
     onEvent(event::XChainSignerListSet const& e);
 
     void
+    onEvent(event::EndOfHistory const& e);
+
+    void
+    initSync(
+        ChainType const ct,
+        ripple::uint256 const& eHash,
+        std::int32_t const rpcOrder,
+        FederatorEvent const& e);
+
+    void
+    tryFinishInitSync(ChainType const ct);
+
+    void
     pushAtt(
         ripple::STXChainBridge const& bridge,
         ripple::AttestationBatch::AttestationClaim&& att,
@@ -233,6 +260,15 @@ private:
 
     void
     submitTxn(Submission const& submission, ChainType dstChain);
+
+    void
+    deleteFromDB(
+        ChainType ct,
+        std::uint64_t claimID,
+        bool isCreateAccount);  // TODO add bridge
+
+    void
+    sendDBAttests(ChainType ct);
 
     friend std::shared_ptr<Federator>
     make_Federator(
