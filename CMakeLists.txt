@@ -1,7 +1,16 @@
 cmake_minimum_required (VERSION 3.11)
 project (xbridge_witnessd)
 
-include(${CMAKE_BINARY_DIR}/conan_paths.cmake)
+set(CONAN_PATHS_1 ${CMAKE_BINARY_DIR}/conan_paths.cmake)
+set(CONAN_PATHS_2 ${CMAKE_BINARY_DIR}/conan-dependencies/conan_paths.cmake)
+
+if(EXISTS "${CONAN_PATHS_1}")
+    include(${CONAN_PATHS_1})
+elseif(EXISTS "${CONAN_PATHS_2}")
+    include(${CONAN_PATHS_2})
+else()
+    message(FATAL_ERROR  " conan_paths.cmake not found")
+endif()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED TRUE)
@@ -29,6 +38,12 @@ if(coverage)
   set(coverage OFF CACHE BOOL "gcc/clang only" FORCE)
 endif()
 
+add_compile_definitions(
+  BOOST_ASIO_USE_TS_EXECUTOR_AS_DEFAULT
+  BOOST_CONTAINER_FWD_BAD_DEQUE
+  HAS_UNCAUGHT_EXCEPTIONS=1
+)
+
 if (NOT has_parent)
   find_package(Ripple QUIET)
   if (NOT TARGET Ripple::xrpl_core)
@@ -50,7 +65,7 @@ if (NOT has_parent)
 
     # rippled_tag is cache string and can be overriden when configuring
     # with -Drippled_tag=commit_or_tag in order to pick a specific
-    # rippled version to download. Default tag is develop/master/release as 
+    # rippled version to download. Default tag is develop/master/release as
     # determined by the branch of this project
     if (NOT (_branch STREQUAL "master" OR _branch STREQUAL "release"))
       set (rippled_tag "xbridge" CACHE STRING
@@ -150,6 +165,3 @@ if (has_parent)
   set_target_properties (xbridge_witnessd PROPERTIES EXCLUDE_FROM_ALL ON)
   set_target_properties (xbridge_witnessd PROPERTIES EXCLUDE_FROM_DEFAULT_BUILD ON)
 endif ()
-
-
-
