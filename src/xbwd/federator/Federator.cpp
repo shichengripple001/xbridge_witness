@@ -73,14 +73,14 @@ make_Federator(
 
     std::shared_ptr<ChainListener> mainchainListener =
         std::make_shared<ChainListener>(
-            ChainListener::IsMainchain::yes,
+            ChainType::locking,
             config.bridge,
             getSubmitAccount(ChainType::locking),
             r,
             j);
     std::shared_ptr<ChainListener> sidechainListener =
         std::make_shared<ChainListener>(
-            ChainListener::IsMainchain::no,
+            ChainType::issuing,
             config.bridge,
             getSubmitAccount(ChainType::issuing),
             r,
@@ -96,7 +96,9 @@ make_Federator(
 }
 
 Federator::Chain::Chain(config::ChainConfig const& config)
-    : rewardAccount_{config.rewardAccount}, txnSubmit_(config.txnSubmit)
+    : rewardAccount_{config.rewardAccount}
+    , txnSubmit_(config.txnSubmit)
+    , ignoreSignerList_(config.ignoreSignerList)
 {
 }
 
@@ -591,12 +593,41 @@ Federator::onEvent(event::NewLedger const& e)
 }
 
 void
+Federator::onEvent(event::XChainSignerListSet const& e)
+{
+    const auto signingAcc = calcAccountID(signingPK_);
+    const auto ignoreSignerList(chains_[e.chainType_].ignoreSignerList_);
+    auto& inSignerList = inSignerList_[e.chainType_];
+
+    inSignerList = [&] {
+        for (const auto& acc : e.entries_)
+        {
+            if (acc == signingAcc)
+                return KeySignerListStatus::present;
+        }
+        return KeySignerListStatus::absent;
+    }();
+
+    JLOGV(
+        j_.info(),
+        "event::XChainSignerListSet",
+        ripple::jv("SigningAcc", ripple::toBase58(signingAcc)),
+        ripple::jv("DoorID", ripple::toBase58(e.account_)),
+        ripple::jv("ChainType", to_string(e.chainType_)),
+        ripple::jv("Active", inSignerList == KeySignerListStatus::present),
+        ripple::jv("IgnoreSignerList", ignoreSignerList));
+}
+
+void
 Federator::pushAttOnSubmitTxn(
     ripple::STXChainBridge const& bridge,
     ChainType chainType)
 {
     // batch mutex must already be held
     bool notify = false;
+    const auto inSignList = inSignerList_[chainType];
+    if (chains_[chainType].ignoreSignerList_ ||
+        (inSignList != KeySignerListStatus::absent))
     {
         std::lock_guard tl{txnsMutex_};
         notify = txns_[ChainType::locking].empty() &&
@@ -613,6 +644,17 @@ Federator::pushAttOnSubmitTxn(
         curClaimAtts_[chainType].clear();
         curCreateAtts_[chainType].clear();
     }
+    else
+    {
+        curClaimAtts_[chainType].clear();
+        curCreateAtts_[chainType].clear();
+
+        JLOGV(
+            j_.info(),
+            "not in signer list, atestations dropped",
+            ripple::jv("ChainType", to_string(chainType)));
+    }
+
     if (notify)
     {
         std::lock_guard l(cvMutexes_[lt_event]);

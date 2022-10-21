@@ -165,3 +165,8 @@ if (has_parent)
   set_target_properties (xbridge_witnessd PROPERTIES EXCLUDE_FROM_ALL ON)
   set_target_properties (xbridge_witnessd PROPERTIES EXCLUDE_FROM_DEFAULT_BUILD ON)
 endif ()
+
+#fix for MAC
+get_target_property(FMT_INC_DIRS fmt::fmt INTERFACE_INCLUDE_DIRECTORIES)
+list (GET FMT_INC_DIRS 0 FMT_INC_DIR)
+target_include_directories(xbridge_witnessd BEFORE PRIVATE ${FMT_INC_DIR})
