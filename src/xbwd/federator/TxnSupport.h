@@ -61,8 +61,7 @@ getSignedTxn(
     std::uint32_t seq,
     std::uint32_t lastLedgerSeq,
     ripple::XRPAmount const& fee,
-    ripple::PublicKey const& pk,
-    ripple::SecretKey const& sk,
+    std::pair<ripple::PublicKey, ripple::SecretKey> const& keypair,
     beast::Journal j)
 {
     using namespace ripple;
@@ -71,6 +70,7 @@ getSignedTxn(
 
     try
     {
+        auto const& [pk, sk] = keypair;
         STParsedJSONObject parsed(std::string(jss::tx_json), txnJson);
         if (parsed.object == std::nullopt)
         {

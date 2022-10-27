@@ -678,8 +678,7 @@ Federator::submitTxn(Submission const& submission, ChainType dstChain)
         submission.accountSqn_,
         submission.lastLedgerSeq_,
         fee,
-        txnSubmit.publicKey,
-        txnSubmit.signingKey,
+        txnSubmit.keypair,
         j_);
 
     Json::Value const request = [&] {

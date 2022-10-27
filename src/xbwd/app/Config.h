@@ -41,8 +41,8 @@ struct AdminConfig
 struct TxnSubmit
 {
     ripple::KeyType keyType;
-    ripple::SecretKey signingKey;
-    ripple::PublicKey publicKey;
+
+    std::pair<ripple::PublicKey, ripple::SecretKey> keypair;
     ripple::AccountID submittingAccount;
     bool shouldSubmit{true};
 

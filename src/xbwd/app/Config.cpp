@@ -90,10 +90,9 @@ AdminConfig::make(Json::Value const& jv)
 
 TxnSubmit::TxnSubmit(Json::Value const& jv)
     : keyType{keyTypeFromJson(jv, "SigningKeyType")}
-    , signingKey{ripple::generateSecretKey(
+    , keypair{ripple::generateKeyPair(
           keyType,
           rpc::fromJson<ripple::Seed>(jv, "SigningKeySeed"))}
-    , publicKey{ripple::derivePublicKey(keyType, signingKey)}
     , submittingAccount{
           rpc::fromJson<ripple::AccountID>(jv, "SubmittingAccount")}
 {
@@ -122,9 +121,10 @@ Config::Config(Json::Value const& jv)
     , rpcEndpoint{rpc::fromJson<beast::IP::Endpoint>(jv, "RPCEndpoint")}
     , dataDir{rpc::fromJson<boost::filesystem::path>(jv, "DBDir")}
     , keyType{keyTypeFromJson(jv, "SigningKeyType")}
-    , signingKey{ripple::generateSecretKey(
-          keyType,
-          rpc::fromJson<ripple::Seed>(jv, "SigningKeySeed"))}
+    , signingKey{ripple::generateKeyPair(
+                     keyType,
+                     rpc::fromJson<ripple::Seed>(jv, "SigningKeySeed"))
+                     .second}
     , bridge{rpc::fromJson<ripple::STXChainBridge>(jv, "XChainBridge")}
     , adminConfig{
           jv.isMember("Admin") ? AdminConfig::make(jv["Admin"]) : std::nullopt}
