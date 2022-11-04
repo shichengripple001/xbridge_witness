@@ -503,18 +503,17 @@ Federator::onEvent(event::HeartbeatTimer const& e)
     JLOG(j_.trace()) << "HeartbeatTimer";
 }
 
-static std::unordered_set<ripple::TERUnderlyingType> SkippableTec({
-    ripple::tesSUCCESS,
-    ripple::tecXCHAIN_NO_CLAIM_ID,
-    ripple::tecXCHAIN_SENDING_ACCOUNT_MISMATCH,
-    ripple::tecXCHAIN_ACCOUNT_CREATE_PAST,
-    ripple::tecXCHAIN_WRONG_CHAIN,
-    ripple::tecXCHAIN_PROOF_UNKNOWN_KEY,
-    ripple::tecXCHAIN_NO_SIGNERS_LIST,
-    ripple::tecBAD_XCHAIN_TRANSFER_ISSUE,
-    ripple::tecINSUFFICIENT_RESERVE,
-    ripple::tecNO_DST_INSUF_XRP
-});
+static std::unordered_set<ripple::TERUnderlyingType> SkippableTec(
+    {ripple::tesSUCCESS,
+     ripple::tecXCHAIN_NO_CLAIM_ID,
+     ripple::tecXCHAIN_SENDING_ACCOUNT_MISMATCH,
+     ripple::tecXCHAIN_ACCOUNT_CREATE_PAST,
+     ripple::tecXCHAIN_WRONG_CHAIN,
+     ripple::tecXCHAIN_PROOF_UNKNOWN_KEY,
+     ripple::tecXCHAIN_NO_SIGNERS_LIST,
+     ripple::tecBAD_XCHAIN_TRANSFER_ISSUE,
+     ripple::tecINSUFFICIENT_RESERVE,
+     ripple::tecNO_DST_INSUF_XRP});
 
 void
 Federator::onEvent(event::XChainAttestsResult const& e)
@@ -843,7 +842,8 @@ Federator::txnSubmitLoop()
             accountInfo[ripple::jss::result].isMember("account_data"))
         {
             auto const ad = accountInfo[ripple::jss::result]["account_data"];
-            if (ad.isMember(ripple::jss::Sequence) && ad[ripple::jss::Sequence].isIntegral())
+            if (ad.isMember(ripple::jss::Sequence) &&
+                ad[ripple::jss::Sequence].isIntegral())
             {
                 accountSqns_[chain] = ad[ripple::jss::Sequence].asUInt();
                 return true;
