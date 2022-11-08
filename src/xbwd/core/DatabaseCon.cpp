@@ -36,9 +36,28 @@ DatabaseCon::DatabaseCon(
     boost::filesystem::path const& pPath,
     std::vector<std::string> const* commonPragma,
     std::vector<std::string> const& pragma,
-    std::vector<std::string> const& initSQL)
-    : session_(std::make_shared<soci::session>())
+    std::vector<std::string> const& initSQL,
+    beast::Journal j)
+    : session_(std::make_shared<soci::session>()), j_(j)
 {
+    const auto pParent = pPath.parent_path();
+    boost::system::error_code ec;
+    if (!boost::filesystem::exists(pParent, ec))
+    {
+        boost::filesystem::create_directories(pParent, ec);
+        if (ec)
+        {
+            JLOGV(
+                j_.fatal(),
+                "can't create db path",
+                ripple::jv("error", ec.message()),
+                ripple::jv("path", pParent.string()));
+
+            throw std::runtime_error(
+                "can't create db path, error: " + ec.message());
+        }
+    }
+
     open(*session_, "sqlite", pPath.string());
 
     if (commonPragma)
