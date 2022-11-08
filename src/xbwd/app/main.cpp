@@ -71,7 +71,7 @@ main(int argc, char** argv)
     //
     po::options_description general("General Options");
     general.add_options()("help,h", "Display this message.")(
-        "config", po::value<std::string>(), "Specify the config file.")(
+        "conf", po::value<std::string>(), "Specify the config file.")(
         "json", po::value<std::string>(), "Handle the provided json request")(
         "quiet,q", "quiet")("verbose,v", "verbose")(
         "unittest,u", "Perform unit tests.")(
@@ -117,8 +117,8 @@ main(int argc, char** argv)
         std::unique_ptr<xbwd::config::Config> config = [&]() -> auto
         {
             auto const configFile = [&]() -> std::string {
-                if (vm.count("config"))
-                    return vm["config"].as<std::string>();
+                if (vm.count("conf"))
+                    return vm["conf"].as<std::string>();
                 throw std::runtime_error("must specify a config file");
             }();
 
