@@ -59,7 +59,7 @@ xChainDBInit()
         //              this is raw data - no encoded.
         // Success is a bool (but soci complains about using bools)
 
-        auto const tblFmtStr = R"sql(
+        auto constexpr tblFmtStr = R"sql(
             CREATE TABLE IF NOT EXISTS {table_name} (
                 TransID           CHARACTER(64) PRIMARY KEY,
                 LedgerSeq         BIGINT UNSIGNED,
@@ -73,11 +73,11 @@ xChainDBInit()
                 PublicKey         BLOB,
                 Signature         BLOB);
         )sql";
-        auto const idxFmtStr = R"sql(
+        auto constexpr idxFmtStr = R"sql(
             CREATE INDEX IF NOT EXISTS {table_name}ClaimIDIdx ON {table_name}(ClaimID);",
         )sql";
 
-        auto const createAccTblFmtStr = R"sql(
+        auto constexpr createAccTblFmtStr = R"sql(
             CREATE TABLE IF NOT EXISTS {table_name} (
                 TransID           CHARACTER(64) PRIMARY KEY,
                 LedgerSeq         BIGINT UNSIGNED,
@@ -92,7 +92,7 @@ xChainDBInit()
                 PublicKey         BLOB,
                 Signature         BLOB);
         )sql";
-        auto const createAccIdxFmtStr = R"sql(
+        auto constexpr createAccIdxFmtStr = R"sql(
             CREATE INDEX IF NOT EXISTS {table_name}CreateCountIdx ON {table_name}(CreateCount);",
         )sql";
 
