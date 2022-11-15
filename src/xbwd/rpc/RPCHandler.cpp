@@ -525,12 +525,12 @@ std::unordered_map<std::string, CmdFun> const handlers = [] {
     using namespace std::literals;
     std::unordered_map<std::string, CmdFun> r;
     r.emplace("stop"s, CmdFun{doStop, Role::ADMIN});
-    r.emplace("server_info"s, CmdFun{doServerInfo, Role::USER});
-    r.emplace("witness"s, CmdFun{doWitness, Role::USER});
+    r.emplace("server_info"s, CmdFun{doServerInfo, Role::ADMIN});
+    r.emplace("witness"s, CmdFun{doWitness, Role::ADMIN});
     r.emplace(
-        "witness_account_create"s, CmdFun{doWitnessAccountCreate, Role::USER});
-    r.emplace("select_all_locking"s, CmdFun{doSelectAllLocking, Role::USER});
-    r.emplace("select_all_issuing"s, CmdFun{doSelectAllIssuing, Role::USER});
+        "witness_account_create"s, CmdFun{doWitnessAccountCreate, Role::ADMIN});
+    r.emplace("select_all_locking"s, CmdFun{doSelectAllLocking, Role::ADMIN});
+    r.emplace("select_all_issuing"s, CmdFun{doSelectAllIssuing, Role::ADMIN});
     r.emplace("attest_tx"s, CmdFun{doAttestTx, Role::ADMIN});
     return r;
 }();
