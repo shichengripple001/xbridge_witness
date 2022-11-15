@@ -196,6 +196,24 @@ public:
     Json::Value
     getInfo() const;
 
+    /**
+     * Answering a RPC request for attesting an out of order transaction.
+     * The local witness node sends a tx RPC request to the connected
+     * rippled node to pull the details of a transaction. If the response
+     * has the right details, attest the transaction.
+     *
+     * @param bridge the bridge spec
+     * @param ct the chain type
+     * @param txHash the transaction hash
+     * @param result the response to the RPC request.
+     */
+    void
+    pullAndAttestTx(
+        ripple::STXChainBridge const& bridge,
+        ChainType ct,
+        ripple::uint256 const& txHash,
+        Json::Value& result);
+
 private:
     // Two phase init needed for shared_from this.
     // Only called from `make_Federator`

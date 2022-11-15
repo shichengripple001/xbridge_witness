@@ -1,5 +1,7 @@
 #pragma once
 
+#include <xbwd/basics/ChainTypes.h>
+
 #include <ripple/beast/net/IPEndpoint.h>
 #include <ripple/json/json_value.h>
 #include <ripple/protocol/AccountID.h>
@@ -121,6 +123,25 @@ fromJson(Json::Value const& jv, char const* key)
             "Expected json key: "s + key + " while constructing a string");
 
     return v.asString();
+}
+
+template <>
+inline ChainType
+fromJson(Json::Value const& jv, char const* key)
+{
+    using namespace std::literals;
+    auto const v = jv[key];
+    if (v.isNull())
+        throw std::runtime_error(
+            "Expected json key: "s + key + " while constructing a ChainType");
+
+    auto const s = v.asString();
+    if (s == to_string(ChainType::locking))
+        return ChainType::locking;
+    if (s == to_string(ChainType::issuing))
+        return ChainType::issuing;
+    throw std::runtime_error(
+        "Expected locking or issuing as a ChainType's value");
 }
 
 template <>

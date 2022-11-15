@@ -22,6 +22,7 @@
 #include <xbwd/app/App.h>
 #include <xbwd/app/DBInit.h>
 #include <xbwd/basics/ChainTypes.h>
+#include <xbwd/client/RpcResultParse.h>
 #include <xbwd/federator/TxnSupport.h>
 
 #include <ripple/basics/strHex.h>
@@ -607,10 +608,13 @@ Federator::onEvent(event::XChainCommitDetected const& e)
 
     if (initSync_[dstChain].syncing_)
     {
-        initSync(dstChain, e.txnHash_, e.rpcOrder_, e);
+        if (!e.rpcOrder_)
+            return;
+        initSync(dstChain, e.txnHash_, *e.rpcOrder_, e);
         return;
     }
-    else if (e.rpcOrder_ < initSync_[dstChain].rpcOrder_)
+
+    if (e.rpcOrder_ && *e.rpcOrder_ < initSync_[dstChain].rpcOrder_)
     {
         // don't need older ones
         return;
@@ -754,7 +758,8 @@ Federator::onEvent(event::XChainCommitDetected const& e)
 
     if (autoSubmit_[dstChain] && claimOpt)
     {
-        pushAtt(e.bridge_, std::move(*claimOpt), dstChain, e.ledgerBoundary_);
+        bool processNow = e.ledgerBoundary_ || !e.rpcOrder_;
+        pushAtt(e.bridge_, std::move(*claimOpt), dstChain, processNow);
     }
 }
 
@@ -773,10 +778,13 @@ Federator::onEvent(event::XChainAccountCreateCommitDetected const& e)
 
     if (initSync_[dstChain].syncing_)
     {
-        initSync(dstChain, e.txnHash_, e.rpcOrder_, e);
+        if (!e.rpcOrder_)
+            return;
+        initSync(dstChain, e.txnHash_, *e.rpcOrder_, e);
         return;
     }
-    else if (e.rpcOrder_ < initSync_[dstChain].rpcOrder_)
+
+    if (e.rpcOrder_ && *e.rpcOrder_ < initSync_[dstChain].rpcOrder_)
     {
         // don't need older ones
         return;
@@ -927,7 +935,8 @@ Federator::onEvent(event::XChainAccountCreateCommitDetected const& e)
     }
     if (autoSubmit_[dstChain] && createOpt)
     {
-        pushAtt(e.bridge_, std::move(*createOpt), dstChain, e.ledgerBoundary_);
+        bool processNow = e.ledgerBoundary_ || !e.rpcOrder_;
+        pushAtt(e.bridge_, std::move(*createOpt), dstChain, processNow);
     }
 }
 
@@ -1588,7 +1597,6 @@ Federator::txnSubmitLoop()
                     R"sql(UPDATE {table_name} SET LedgerSeq = :ledger_sqn WHERE ChainType = :chain_type;
             )sql",
                     fmt::arg("table_name", db_init::xChainSyncTable));
-                JLOG(j_.trace()) << "syncDB_SQL " << sql;
                 auto const chainType = static_cast<std::uint32_t>(submitChain);
                 *session << sql, soci::use(txn.lastLedgerSeq_),
                     soci::use(chainType);
@@ -1747,6 +1755,29 @@ Federator::deleteFromDB(ChainType ct, std::uint64_t id, bool isCreateAccount)
     }();
     *session << sql, soci::use(id);
 };
+
+void
+Federator::pullAndAttestTx(
+    ripple::STXChainBridge const& bridge,
+    ChainType ct,
+    ripple::uint256 const& txHash,
+    Json::Value& result)
+{
+    // TODO multi bridge
+    if (initSync_[otherChain(ct)].syncing_)
+    {
+        result["error"] = "syncing";
+        return;
+    }
+
+    auto callback = [this, srcChain = ct](Json::Value const& v) {
+        chains_[srcChain].listener_->processTx(v);
+    };
+
+    Json::Value request;
+    request[ripple::jss::transaction] = to_string(txHash);
+    chains_[ct].listener_->send("tx", request, callback);
+}
 
 Submission::Submission(
     uint32_t lastLedgerSeq,
