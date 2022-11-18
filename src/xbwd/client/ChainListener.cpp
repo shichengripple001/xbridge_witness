@@ -30,6 +30,7 @@
 #include <ripple/json/json_get_or_throw.h>
 #include <ripple/json/json_writer.h>
 #include <ripple/protocol/AccountID.h>
+#include <ripple/protocol/LedgerFormats.h>
 #include <ripple/protocol/SField.h>
 #include <ripple/protocol/STAmount.h>
 #include <ripple/protocol/TER.h>
@@ -83,7 +84,7 @@ ChainListener::init(boost::asio::io_service& ios, beast::IP::Endpoint const& ip)
 void
 ChainListener::onConnect()
 {
-    const auto doorAccStr = ripple::toBase58(
+    auto const doorAccStr = ripple::toBase58(
         ChainType::locking == chainType_ ? bridge_.lockingChainDoor()
                                          : bridge_.issuingChainDoor());
 
@@ -94,8 +95,8 @@ ChainListener::onConnect()
     send(
         "account_info",
         params,
-        [self = shared_from_this(), doorAccStr](Json::Value const& v) {
-            self->processAccountInfo(v);
+        [self = shared_from_this(), doorAccStr](Json::Value const& msg) {
+            self->processAccountInfo(msg);
 
             Json::Value params;
             params[ripple::jss::account_history_tx_stream] = Json::objectValue;
@@ -388,11 +389,21 @@ ChainListener::processMessage(Json::Value const& msg)
         fieldMatchesStr(msg, ripple::jss::type, ripple::jss::transaction))
     {
         auto const& txn = msg[ripple::jss::transaction];
-        if (fieldMatchesStr(
-                txn, ripple::jss::TransactionType, ripple::jss::SignerListSet))
-        {
+        auto const txType = [](Json::Value const& val) -> std::string {
+            if (!val.isMember(ripple::jss::TransactionType))
+                return {};
+            auto const& f = val[ripple::jss::TransactionType];
+            if (!f.isString())
+                return {};
+            return f.asString();
+        }(txn);
+
+        if (txType == ripple::jss::SignerListSet)
             processSignerListSet(txn);
-        }
+        else if (txType == ripple::jss::AccountSet)
+            processAccountSet(txn);
+        else if (txType == ripple::jss::SetRegularKey)
+            processSetRegularKey(txn);
     }
 
     auto const meta = msg[ripple::jss::meta];
@@ -855,84 +866,57 @@ ChainListener::processMessage(Json::Value const& msg)
 
 namespace {
 
-void
-logBadMsg(
-    beast::Journal& j,
-    const std::string_view reason,
-    Json::Value const& msg,
-    const std::string_view chainName)
-{
-    JLOGV(
-        j.warn(),
-        "ignoring signer list message",
-        ripple::jv("reason", reason),
-        ripple::jv("msg", msg),
-        ripple::jv("chain_name", chainName));
-}
-
-std::optional<event::XChainSignerListSet>
+std::optional<std::unordered_set<ripple::AccountID>>
 processSignerListSetGeneral(
     Json::Value const& msg,
-    beast::Journal& j,
-    ChainType chainType)
+    std::string_view const chainName,
+    std::string_view const errTopic,
+    beast::Journal j)
 {
-    const std::string chainName = to_string(chainType);
+    auto warn_ret = [&](std::string_view reason) {
+        JLOGV(
+            j.warn(),
+            errTopic,
+            ripple::jv("reason", reason),
+            ripple::jv("msg", msg),
+            ripple::jv("chain_name", chainName));
+        return std::optional<std::unordered_set<ripple::AccountID>>();
+    };
 
     if (msg.isMember("SignerQuorum"))
     {
-        const unsigned signerQuorum = msg["SignerQuorum"].asUInt();
+        unsigned const signerQuorum = msg["SignerQuorum"].asUInt();
         if (!signerQuorum)
-        {
-            logBadMsg(j, "'SignerQuorum' is null", msg, chainName);
-            return {};
-        }
+            return warn_ret("'SignerQuorum' is null");
     }
     else
-    {
-        logBadMsg(j, "'SignerQuorum' missed", msg, chainName);
-        return {};
-    }
+        return warn_ret("'SignerQuorum' missed");
 
     if (!msg.isMember("SignerEntries"))
-    {
-        logBadMsg(j, "'SignerEntries' missed", msg, chainName);
-        return {};
-    }
-    const auto& signerEntries = msg["SignerEntries"];
+        return warn_ret("'SignerEntries' missed");
+    auto const& signerEntries = msg["SignerEntries"];
     if (!signerEntries.isArray())
-    {
-        logBadMsg(j, "'SignerEntries' is not an array", msg, chainName);
-        return {};
-    }
+        return warn_ret("'SignerEntries' is not an array");
 
-    event::XChainSignerListSet e;
-    e.entries_.reserve(signerEntries.size());
-    for (const auto& superEntry : signerEntries)
+    std::unordered_set<ripple::AccountID> entries;
+    for (auto const& superEntry : signerEntries)
     {
         if (!superEntry.isMember("SignerEntry"))
-        {
-            logBadMsg(j, "'SignerEntry' missed", msg, chainName);
-            return {};
-        }
-        const auto& entry = superEntry["SignerEntry"];
+            return warn_ret("'SignerEntry' missed");
 
+        auto const& entry = superEntry["SignerEntry"];
         if (!entry.isMember(ripple::jss::Account))
-        {
-            logBadMsg(j, "'Account' missed", msg, chainName);
-            return {};
-        }
-        const auto& jAcc = entry[ripple::jss::Account];
+            return warn_ret("'Account' missed");
+
+        auto const& jAcc = entry[ripple::jss::Account];
         auto parsed = ripple::parseBase58<ripple::AccountID>(jAcc.asString());
         if (!parsed)
-        {
-            logBadMsg(j, "invalid 'Account'", msg, chainName);
-            return {};
-        }
+            return warn_ret("invalid 'Account'");
 
-        e.entries_.push_back(parsed.value());
+        entries.insert(parsed.value());
     }
 
-    return e;
+    return {std::move(entries)};
 }
 
 }  // namespace
@@ -940,145 +924,338 @@ processSignerListSetGeneral(
 void
 ChainListener::processAccountInfo(Json::Value const& msg) noexcept
 {
-    const std::string chainName = to_string(chainType_);
+    std::string const chainName = to_string(chainType_);
+    std::string_view const errTopic = "ignoring account_info message";
+
+    auto warn_ret = [&, this](std::string_view reason) {
+        JLOGV(
+            j_.warn(),
+            errTopic,
+            ripple::jv("reason", reason),
+            ripple::jv("msg", msg),
+            ripple::jv("chain_name", chainName));
+    };
 
     try
     {
         if (!msg.isMember(ripple::jss::result))
-        {
-            logBadMsg(j_, "'result' missed", msg, chainName);
-            return;
-        }
-        const auto& jres = msg[ripple::jss::result];
+            return warn_ret("'result' missed");
 
+        auto const& jres = msg[ripple::jss::result];
         if (!jres.isMember(ripple::jss::account_data))
-        {
-            logBadMsg(j_, "'accoujnt_data' missed", msg, chainName);
-            return;
-        }
-        const auto& jaccData = jres[ripple::jss::account_data];
+            return warn_ret("'account_data' missed");
 
+        auto const& jaccData = jres[ripple::jss::account_data];
         if (!jaccData.isMember(ripple::jss::Account))
+            return warn_ret("'Account' missed");
+
+        auto const& jAcc = jaccData[ripple::jss::Account];
+        auto const parsedAcc =
+            ripple::parseBase58<ripple::AccountID>(jAcc.asString());
+        if (!parsedAcc)
+            return warn_ret("invalid 'Account'");
+
+        // check disable master key
         {
-            logBadMsg(j_, "'Account' missed", msg, chainName);
-            return;
-        }
-        const auto& jAcc = jaccData[ripple::jss::Account];
-        auto parsed = ripple::parseBase58<ripple::AccountID>(jAcc.asString());
-        if (!parsed)
-        {
-            logBadMsg(j_, "invalid 'Account'", msg, chainName);
-            return;
+            auto const fDisableMaster = jaccData.isMember(ripple::jss::Flags)
+                ? static_cast<bool>(
+                      jaccData[ripple::jss::Flags].asUInt() &
+                      ripple::lsfDisableMaster)
+                : false;
+
+            pushEvent(event::XChainAccountSet{
+                chainType_, *parsedAcc, fDisableMaster});
         }
 
-        if (!jaccData.isMember(ripple::jss::signer_lists))
+        // check regular key
         {
-            logBadMsg(j_, "'signer_lists' missed", msg, chainName);
-            return;
-        }
-        const auto& jslArray = jaccData[ripple::jss::signer_lists];
+            if (jaccData.isMember("RegularKey"))
+            {
+                std::string const regularKeyStr =
+                    jaccData["RegularKey"].asString();
+                auto opRegularDoorId =
+                    ripple::parseBase58<ripple::AccountID>(regularKeyStr);
 
-        if (!jslArray.isArray() || jslArray.size() != 1)
-        {
-            logBadMsg(
-                j_, "'signer_lists'  isn't array of size 1", msg, chainName);
-            return;
+                pushEvent(event::XChainSetRegularKey{
+                    chainType_,
+                    *parsedAcc,
+                    opRegularDoorId ? std::move(*opRegularDoorId)
+                                    : ripple::AccountID()});
+            }
         }
 
-        const auto& jsl = jslArray[0u];
-        auto opEv = processSignerListSetGeneral(jsl, j_, chainType_);
-        if (opEv)
+        // check signer list
         {
-            event::XChainSignerListSet& evSignSet(*opEv);
-            evSignSet.chainType_ = chainType_;
-            evSignSet.account_ = parsed.value();
-            pushEvent(std::move(evSignSet));
+            if (!jaccData.isMember(ripple::jss::signer_lists))
+                return warn_ret("'signer_lists' missed");
+            auto const& jslArray = jaccData[ripple::jss::signer_lists];
+            if (!jslArray.isArray() || jslArray.size() != 1)
+                return warn_ret("'signer_lists'  isn't array of size 1");
+
+            auto opEntries = processSignerListSetGeneral(
+                jslArray[0u], chainName, errTopic, j_);
+            if (!opEntries)
+                return;
+
+            pushEvent(event::XChainSignerListSet{
+                chainType_, *parsedAcc, std::move(*opEntries)});
         }
     }
-    catch (const std::exception& e)
+    catch (std::exception const& e)
     {
         JLOGV(
             j_.warn(),
-            "ignoring signer list message",
+            errTopic,
             ripple::jv("exception", e.what()),
             ripple::jv("msg", msg),
             ripple::jv("chain_name", chainName));
     }
     catch (...)
     {
-        logBadMsg(j_, "unknown exception", msg, chainName);
+        JLOGV(
+            j_.warn(),
+            errTopic,
+            ripple::jv("exception", "unknown exception"),
+            ripple::jv("msg", msg),
+            ripple::jv("chain_name", chainName));
     }
 }
 
 void
 ChainListener::processSignerListSet(Json::Value const& msg) noexcept
 {
-    const std::string chainName = to_string(chainType_);
+    std::string const chainName = to_string(chainType_);
+    std::string_view const errTopic = "ignoring SignerListSet message";
+
+    auto warn_ret = [&, this](std::string_view reason) {
+        JLOGV(
+            j_.warn(),
+            errTopic,
+            ripple::jv("reason", reason),
+            ripple::jv("msg", msg),
+            ripple::jv("chain_name", chainName));
+    };
 
     try
     {
-        const auto encodedLockingDoorAccId =
+        auto const lockingDoorStr =
             ripple::toBase58(bridge_.lockingChainDoor());
-        const auto encodedIssuingDoorAccId =
+        auto const issuingDoorStr =
             ripple::toBase58(bridge_.issuingChainDoor());
 
         if (!msg.isMember(ripple::jss::Account))
-        {
-            logBadMsg(j_, "'Account' missed", msg, chainName);
+            return warn_ret("'Account' missed");
+
+        auto const txAccStr = msg[ripple::jss::Account].asString();
+        if ((txAccStr != lockingDoorStr) && (txAccStr != issuingDoorStr))
+            return warn_ret("unknown tx account");
+
+        auto const parsedAcc = ripple::parseBase58<ripple::AccountID>(txAccStr);
+        if (!parsedAcc)
+            return warn_ret("invalid 'Account'");
+
+        auto opEntries =
+            processSignerListSetGeneral(msg, chainName, errTopic, j_);
+        if (!opEntries)
             return;
-        }
-        const auto& jAcc = msg[ripple::jss::Account];
-        const auto txAccStr = jAcc.asString();
 
-        if ((txAccStr != encodedLockingDoorAccId) &&
-            (txAccStr != encodedIssuingDoorAccId))
+        event::XChainSignerListSet evSignSet{
+            .chainType_ = txAccStr == lockingDoorStr ? ChainType::locking
+                                                     : ChainType::issuing,
+            .masterDoorID_ = *parsedAcc,
+            .signerList_ = std::move(*opEntries)};
+        if (evSignSet.chainType_ != chainType_)
         {
-            logBadMsg(j_, "unknown tx account", msg, chainName);
-            return;
+            // This is strange but it is processed well by rippled
+            // so we can proceed
+            JLOGV(
+                j_.warn(),
+                "processing signer list message",
+                ripple::jv("warning", "Door account type mismatch"),
+                ripple::jv("chain_type", to_string(chainType_)),
+                ripple::jv("tx_type", to_string(evSignSet.chainType_)));
         }
 
-        auto parsed = ripple::parseBase58<ripple::AccountID>(txAccStr);
-        if (!parsed)
-        {
-            logBadMsg(j_, "invalid 'Account'", msg, chainName);
-            return;
-        }
-
-        auto opEv = processSignerListSetGeneral(msg, j_, chainType_);
-        if (opEv)
-        {
-            event::XChainSignerListSet& evSignSet(*opEv);
-            evSignSet.chainType_ = txAccStr == encodedLockingDoorAccId
-                ? ChainType::locking
-                : ChainType::issuing;
-
-            evSignSet.account_ = parsed.value();
-            if (evSignSet.chainType_ != chainType_)
-            {
-                // This is strange but it is processed well by rippled
-                // so we can proceed
-                JLOGV(
-                    j_.warn(),
-                    "processing signer list",
-                    ripple::jv("warning", "Door account type mismatch"),
-                    ripple::jv("chain_type", chainName),
-                    ripple::jv("tx_type", to_string(evSignSet.chainType_)));
-            }
-            pushEvent(std::move(evSignSet));
-        }
+        pushEvent(std::move(evSignSet));
     }
-    catch (const std::exception& e)
+    catch (std::exception const& e)
     {
         JLOGV(
             j_.warn(),
-            "ignoring signer list message",
+            errTopic,
             ripple::jv("exception", e.what()),
             ripple::jv("msg", msg),
             ripple::jv("chain_name", chainName));
     }
     catch (...)
     {
-        logBadMsg(j_, "unknown exception", msg, chainName);
+        JLOGV(
+            j_.warn(),
+            errTopic,
+            ripple::jv("exception", "unknown exception"),
+            ripple::jv("msg", msg),
+            ripple::jv("chain_name", chainName));
+    }
+}
+
+void
+ChainListener::processAccountSet(Json::Value const& msg) noexcept
+{
+    std::string const chainName = to_string(chainType_);
+    std::string_view const errTopic = "ignoring AccountSet message";
+
+    auto warn_ret = [&, this](std::string_view reason) {
+        JLOGV(
+            j_.warn(),
+            errTopic,
+            ripple::jv("reason", reason),
+            ripple::jv("msg", msg),
+            ripple::jv("chain_name", chainName));
+    };
+
+    try
+    {
+        auto const lockingDoorStr =
+            ripple::toBase58(bridge_.lockingChainDoor());
+        auto const issuingDoorStr =
+            ripple::toBase58(bridge_.issuingChainDoor());
+
+        if (!msg.isMember(ripple::jss::Account))
+            return warn_ret("'Account' missed");
+
+        auto const txAccStr = msg[ripple::jss::Account].asString();
+        if ((txAccStr != lockingDoorStr) && (txAccStr != issuingDoorStr))
+            return warn_ret("unknown tx account");
+
+        auto const parsedAcc = ripple::parseBase58<ripple::AccountID>(txAccStr);
+        if (!parsedAcc)
+            return warn_ret("invalid 'Account'");
+
+        if (!msg.isMember(ripple::jss::SetFlag) &&
+            !msg.isMember(ripple::jss::ClearFlag))
+            return warn_ret("'XXXFlag' missed");
+
+        bool const setFlag = msg.isMember(ripple::jss::SetFlag);
+        unsigned const flag = setFlag ? msg[ripple::jss::SetFlag].asUInt()
+                                      : msg[ripple::jss::ClearFlag].asUInt();
+        if (flag != ripple::asfDisableMaster)
+            return warn_ret("not 'asfDisableMaster' flag");
+
+        event::XChainAccountSet evAccSet{chainType_, *parsedAcc, setFlag};
+        if (evAccSet.chainType_ != chainType_)
+        {
+            // This is strange but it is processed well by rippled
+            // so we can proceed
+            JLOGV(
+                j_.warn(),
+                "processing account set",
+                ripple::jv("warning", "Door account type mismatch"),
+                ripple::jv("chain_type", to_string(chainType_)),
+                ripple::jv("tx_type", to_string(evAccSet.chainType_)));
+        }
+        pushEvent(std::move(evAccSet));
+    }
+    catch (std::exception const& e)
+    {
+        JLOGV(
+            j_.warn(),
+            errTopic,
+            ripple::jv("exception", e.what()),
+            ripple::jv("msg", msg),
+            ripple::jv("chain_name", chainName));
+    }
+    catch (...)
+    {
+        JLOGV(
+            j_.warn(),
+            errTopic,
+            ripple::jv("exception", "unknown exception"),
+            ripple::jv("msg", msg),
+            ripple::jv("chain_name", chainName));
+    }
+}
+
+void
+ChainListener::processSetRegularKey(Json::Value const& msg) noexcept
+{
+    std::string const chainName = to_string(chainType_);
+    std::string_view const errTopic = "ignoring SetRegularKey message";
+
+    auto warn_ret = [&, this](std::string_view reason) {
+        JLOGV(
+            j_.warn(),
+            errTopic,
+            ripple::jv("reason", reason),
+            ripple::jv("msg", msg),
+            ripple::jv("chain_name", chainName));
+    };
+
+    try
+    {
+        auto const lockingDoorStr =
+            ripple::toBase58(bridge_.lockingChainDoor());
+        auto const issuingDoorStr =
+            ripple::toBase58(bridge_.issuingChainDoor());
+
+        if (!msg.isMember(ripple::jss::Account))
+            return warn_ret("'Account' missed");
+
+        auto const txAccStr = msg[ripple::jss::Account].asString();
+        if ((txAccStr != lockingDoorStr) && (txAccStr != issuingDoorStr))
+            return warn_ret("unknown tx account");
+
+        auto const parsedAcc = ripple::parseBase58<ripple::AccountID>(txAccStr);
+        if (!parsedAcc)
+            return warn_ret("invalid 'Account'");
+
+        event::XChainSetRegularKey evSetKey{
+            .chainType_ = txAccStr == lockingDoorStr ? ChainType::locking
+                                                     : ChainType::issuing,
+            .masterDoorID_ = *parsedAcc};
+
+        if (evSetKey.chainType_ != chainType_)
+        {
+            // This is strange but it is processed well by rippled
+            // so we can proceed
+            JLOGV(
+                j_.warn(),
+                "processing account set",
+                ripple::jv("warning", "Door account type mismatch"),
+                ripple::jv("chain_type", to_string(chainType_)),
+                ripple::jv("tx_type", to_string(evSetKey.chainType_)));
+        }
+
+        std::string const regularKeyStr = msg.isMember("RegularKey")
+            ? msg["RegularKey"].asString()
+            : std::string();
+        if (!regularKeyStr.empty())
+        {
+            auto opRegularDoorId =
+                ripple::parseBase58<ripple::AccountID>(regularKeyStr);
+            if (!opRegularDoorId)
+                return warn_ret("invalid 'RegularKey'");
+            evSetKey.regularDoorID_ = std::move(*opRegularDoorId);
+        }
+
+        pushEvent(std::move(evSetKey));
+    }
+    catch (std::exception const& e)
+    {
+        JLOGV(
+            j_.warn(),
+            errTopic,
+            ripple::jv("exception", e.what()),
+            ripple::jv("msg", msg),
+            ripple::jv("chain_name", chainName));
+    }
+    catch (...)
+    {
+        JLOGV(
+            j_.warn(),
+            errTopic,
+            ripple::jv("exception", "unknown exception"),
+            ripple::jv("msg", msg),
+            ripple::jv("chain_name", chainName));
     }
 }
 

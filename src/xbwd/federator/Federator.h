@@ -41,6 +41,7 @@
 #include <memory>
 #include <optional>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 namespace xbwd {
@@ -71,10 +72,22 @@ struct Submission
         ripple::STXChainAttestationBatch const& batch);
 };
 
+struct SignerListInfo
+{
+    enum KeySignerListStatus : int { unknown = -1, absent = 0, present };
+
+    KeySignerListStatus status_ = KeySignerListStatus::unknown;
+    bool presentInSignerList_ = false;
+    bool ignoreSignerList_ = false;
+    bool disableMaster_ = false;
+    ripple::AccountID regularDoorID_;
+
+    Json::Value
+    toJson() const;
+};
+
 class Federator : public std::enable_shared_from_this<Federator>
 {
-    enum class KeySignerListStatus : int { unknown = -1, absent = 0, present };
-
     enum LoopTypes { lt_event, lt_txnSubmit, lt_last };
     std::array<std::thread, lt_last> threads_;
     bool running_ = false;
@@ -89,7 +102,6 @@ class Federator : public std::enable_shared_from_this<Federator>
         ripple::AccountID rewardAccount_;
         std::optional<config::TxnSubmit> txnSubmit_;
         std::optional<ripple::uint256> lastAttestedCommitTx_;
-        bool ignoreSignerList_ = false;
         explicit Chain(config::ChainConfig const& config);
     };
 
@@ -108,9 +120,7 @@ class Federator : public std::enable_shared_from_this<Federator>
     ripple::PublicKey const signingPK_;
     ripple::SecretKey const signingSK_;
 
-    ChainArray<KeySignerListStatus> inSignerList_{
-        KeySignerListStatus::unknown,
-        KeySignerListStatus::unknown};
+    ChainArray<SignerListInfo> signerListsInfo_;
 
     // Use a condition variable to prevent busy waiting when the queue is
     // empty
@@ -223,6 +233,15 @@ private:
 
     void
     onEvent(event::XChainSignerListSet const& e);
+
+	void
+    onEvent(event::XChainSetRegularKey const& e);
+
+    void
+    onEvent(event::XChainAccountSet const& e);
+
+    void
+    updateSignerListStatus(ChainType const chainType);
 
     void
     onEvent(event::EndOfHistory const& e);
