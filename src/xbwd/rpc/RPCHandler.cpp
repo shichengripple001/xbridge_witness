@@ -630,12 +630,17 @@ doCommand(
     if (it->second.role == Role::ADMIN &&
         !isAdmin(app.config().adminConfig, in, remoteIPAddress.address()))
     {
-        result["error"] =
-            fmt::format("{} method requires ADMIN privilege.", cmd);
+        result["error"] = fmt::format(
+            "{} method requires ADMIN privilege. Request authentication "
+            "failed.",
+            cmd);
         return;
     }
 
-    return it->second.func(app, in, result);
+    it->second.func(app, in, result);
+    if (result["request"].isMember("Password") &&
+        result["request"]["Password"].isString())
+        result["request"]["Password"] = "********";
 }
 
 }  // namespace rpc
