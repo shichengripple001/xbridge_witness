@@ -13,6 +13,7 @@ doCommand(
     App& app,
     beast::IP::Endpoint const& remoteIPAddress,
     Json::Value const& in,
+    std::optional<std::string> const& passwordOp,
     Json::Value& result);
 
 }  // namespace rpc
