@@ -694,7 +694,6 @@ ServerHandler::ServerHandler(
 
 ServerHandler::~ServerHandler()
 {
-    threadPool_.join();
     server_ = nullptr;
 }
 
@@ -710,6 +709,7 @@ ServerHandler::setup(std::vector<ripple::Port> const& ports)
 void
 ServerHandler::stop()
 {
+    threadPool_.join();
     server_->close();
     {
         std::unique_lock lock(mutex_);
