@@ -902,6 +902,7 @@ ServerHandler::processSession(
             app_,
             beast::IP::from_asio(session->remote_endpoint().address()),
             jv,
+            {},  // TODO password
             jr[ripple::jss::result]);
     }
     catch (std::exception const& ex)
@@ -1070,6 +1071,7 @@ ServerHandler::processRequest(
         // Otherwise, that field must be an array of length 1 (why?)
         // and we take that first entry and validate that it's an object.
         Json::Value params;
+        std::optional<std::string> passwordOp{};
         {
             params = jsonRPC[ripple::jss::params];
             if (!params)
@@ -1089,6 +1091,17 @@ ServerHandler::processRequest(
                     return;
                 }
             }
+            // note: also mask the password
+            passwordOp = [&]() -> std::optional<std::string> {
+                if (params.isMember("Password") &&
+                    params["Password"].isString())
+                {
+                    auto pass = params["Password"].asString();
+                    params["Password"] = "********";
+                    return pass;
+                }
+                return {};
+            }();
         }
 
         /**
@@ -1100,14 +1113,12 @@ ServerHandler::processRequest(
             user.clear();
         }
 
-        JLOG(j_.debug()) << "Query: " << strMethod << params;
-
         // Provide the JSON-RPC method as the field "command" in the request.
         params[ripple::jss::command] = strMethod;
         JLOG(j_.trace()) << "doRpcCommand:" << strMethod << ":" << params;
 
         Json::Value result;
-        rpc::doCommand(app_, remoteIPAddress, params, result);
+        rpc::doCommand(app_, remoteIPAddress, params, passwordOp, result);
 
         Json::Value r(Json::objectValue);
         if (result.isMember(ripple::jss::error))

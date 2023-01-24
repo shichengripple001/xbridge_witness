@@ -540,6 +540,7 @@ bool
 isAdmin(
     std::optional<config::AdminConfig> const& adminConf,
     Json::Value const& params,
+    std::optional<std::string> const& passwordOp,
     boost::asio::ip::address const& remoteIp)
 {
     if (!adminConf)
@@ -561,9 +562,7 @@ isAdmin(
         bool userMatch = params.isMember("Username") &&
             params["Username"].isString() &&
             params["Username"].asString() == (*ac.pass).user;
-        bool passwordMatch = params.isMember("Password") &&
-            params["Password"].isString() &&
-            params["Password"].asString() == (*ac.pass).password;
+        bool passwordMatch = passwordOp && *passwordOp == (*ac.pass).password;
         if (!userMatch || !passwordMatch)
             return false;
     }
@@ -609,6 +608,7 @@ doCommand(
     App& app,
     beast::IP::Endpoint const& remoteIPAddress,
     Json::Value const& in,
+    std::optional<std::string> const& passwordOp,
     Json::Value& result)
 {
     auto const cmd = [&]() -> std::string {
@@ -628,7 +628,11 @@ doCommand(
     }
 
     if (it->second.role == Role::ADMIN &&
-        !isAdmin(app.config().adminConfig, in, remoteIPAddress.address()))
+        !isAdmin(
+            app.config().adminConfig,
+            in,
+            passwordOp,
+            remoteIPAddress.address()))
     {
         result["error"] = fmt::format(
             "{} method requires ADMIN privilege. Request authentication "
@@ -638,9 +642,6 @@ doCommand(
     }
 
     it->second.func(app, in, result);
-    if (result["request"].isMember("Password") &&
-        result["request"]["Password"].isString())
-        result["request"]["Password"] = "********";
 }
 
 }  // namespace rpc
