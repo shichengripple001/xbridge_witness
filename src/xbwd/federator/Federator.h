@@ -28,6 +28,7 @@
 #include <ripple/beast/utility/Journal.h>
 #include <ripple/json/json_value.h>
 #include <ripple/protocol/PublicKey.h>
+#include <ripple/protocol/STTx.h>
 #include <ripple/protocol/STXChainAttestationBatch.h>
 #include <ripple/protocol/STXChainBridge.h>
 #include <ripple/protocol/SecretKey.h>
@@ -40,8 +41,10 @@
 #include <list>
 #include <memory>
 #include <optional>
+#include <string>
 #include <thread>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace xbwd {
@@ -64,12 +67,131 @@ struct Submission
     // control mechanism and probably does not worth it?
     uint32_t lastLedgerSeq_;
     uint32_t accountSqn_;
-    ripple::STXChainAttestationBatch batch_;
 
+    std::string logName_;
+
+    virtual ~Submission()
+    {
+    }
+
+    std::string const&
+    getLogName() const;
+
+    virtual std::pair<std::string, std::string>
+    forAttestIDs(
+        std::function<void(std::uint64_t id)> commitFunc = [](std::uint64_t) {},
+        std::function<void(std::uint64_t id)> createFunc =
+            [](std::uint64_t) {}) const = 0;
+
+    virtual Json::Value
+    getJson(
+        ripple::JsonOptions const opt = ripple::JsonOptions::none) const = 0;
+
+    virtual std::size_t
+    numAttestations() const = 0;
+
+    virtual ripple::STTx
+    getSignedTxn(
+        config::TxnSubmit const& txn,
+        ripple::XRPAmount const& fee,
+        beast::Journal j) const = 0;
+
+protected:
     Submission(
         uint32_t lastLedgerSeq,
         uint32_t accountSqn,
+        std::string_view const logName);
+};
+
+typedef std::unique_ptr<Submission> SubmissionPtr;
+
+#ifdef USE_BATCH_ATTESTATION
+
+struct SubmissionBatch : public Submission
+{
+    ripple::STXChainAttestationBatch batch_;
+
+    SubmissionBatch(
+        uint32_t lastLedgerSeq,
+        uint32_t accountSqn,
         ripple::STXChainAttestationBatch const& batch);
+
+    virtual std::pair<std::string, std::string>
+    forAttestIDs(
+        std::function<void(std::uint64_t id)> commitFunc,
+        std::function<void(std::uint64_t id)> createFunc) const override;
+
+    Json::Value
+    getJson(ripple::JsonOptions const opt) const override;
+
+    virtual std::size_t
+    numAttestations() const override;
+
+    virtual ripple::STTx
+    getSignedTxn(
+        config::TxnSubmit const& txn,
+        ripple::XRPAmount const& fee,
+        beast::Journal j) const override;
+};
+
+#endif
+
+struct SubmissionClaim : public Submission
+{
+    ripple::STXChainBridge bridge_;
+    ripple::AttestationBatch::AttestationClaim claim_;
+
+    SubmissionClaim(
+        uint32_t lastLedgerSeq,
+        uint32_t accountSqn,
+        ripple::STXChainBridge const& bridge,
+        ripple::AttestationBatch::AttestationClaim const& claim);
+
+    virtual std::pair<std::string, std::string>
+    forAttestIDs(
+        std::function<void(std::uint64_t id)> commitFunc,
+        std::function<void(std::uint64_t id)> createFunc) const override;
+
+    virtual Json::Value
+    getJson(ripple::JsonOptions const opt) const override;
+
+    virtual std::size_t
+    numAttestations() const override;
+
+    virtual ripple::STTx
+    getSignedTxn(
+        config::TxnSubmit const& txn,
+        ripple::XRPAmount const& fee,
+        beast::Journal j) const override;
+};
+
+struct SubmissionCreateAccount : public Submission
+{
+    ripple::STXChainBridge bridge_;
+    ripple::AttestationBatch::AttestationCreateAccount create_;
+
+    SubmissionCreateAccount(
+        uint32_t lastLedgerSeq,
+        uint32_t accountSqn,
+        ripple::STXChainBridge const& bridge,
+        ripple::AttestationBatch::AttestationCreateAccount const& create);
+
+    virtual std::pair<std::string, std::string>
+    forAttestIDs(
+        std::function<void(std::uint64_t id)> commitFunc,
+        std::function<void(std::uint64_t id)> createFunc) const override;
+
+    virtual Json::Value
+    getJson(ripple::JsonOptions const opt) const override;
+
+    virtual std::size_t
+    numAttestations() const override;
+
+    virtual ripple::STTx
+    getSignedTxn(
+        config::TxnSubmit const& txn,
+        ripple::XRPAmount const& fee,
+        beast::Journal j) const override;
 };
 
 struct SignerListInfo
@@ -112,9 +234,9 @@ class Federator : public std::enable_shared_from_this<Federator>
     std::vector<FederatorEvent> GUARDED_BY(eventsMutex_) events_;
 
     mutable std::mutex txnsMutex_;
-    ChainArray<std::vector<Submission>> GUARDED_BY(txnsMutex_) txns_;
-    ChainArray<std::list<Submission>> GUARDED_BY(txnsMutex_) submitted_;
-    ChainArray<std::vector<Submission>> GUARDED_BY(txnsMutex_) errored_;
+    ChainArray<std::vector<SubmissionPtr>> GUARDED_BY(txnsMutex_) txns_;
+    ChainArray<std::list<SubmissionPtr>> GUARDED_BY(txnsMutex_) submitted_;
+    ChainArray<std::vector<SubmissionPtr>> GUARDED_BY(txnsMutex_) errored_;
 
     ripple::KeyType const keyType_;
     ripple::PublicKey const signingPK_;
@@ -163,6 +285,8 @@ class Federator : public std::enable_shared_from_this<Federator>
     ChainArray<InitSync> initSync_;
     ChainArray<std::deque<FederatorEvent>> replays_;
     beast::Journal j_;
+
+    config::Config config_;
 
 public:
     // Tag so make_Federator can call `std::make_shared`
@@ -252,7 +376,7 @@ private:
     void
     onEvent(event::XChainSignerListSet const& e);
 
-	void
+    void
     onEvent(event::XChainSetRegularKey const& e);
 
     void
@@ -296,7 +420,7 @@ private:
         EXCLUDES(txnsMutex_, cvMutexes_);
 
     void
-    submitTxn(Submission const& submission, ChainType dstChain);
+    submitTxn(SubmissionPtr&& submission, ChainType dstChain);
 
     void
     deleteFromDB(
@@ -313,6 +437,9 @@ private:
         boost::asio::io_service& ios,
         config::Config const& config,
         beast::Journal j);
+
+    std::size_t
+    maxAttests() const;
 };
 
 std::shared_ptr<Federator>

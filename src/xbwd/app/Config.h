@@ -78,6 +78,8 @@ public:
     unsigned logSizeToRotateMb = 0;  // 0 means "no rotation"
     unsigned logFilesToKeep = 0;
 
+    bool useBatch;
+
     explicit Config(Json::Value const& jv);
 };
 

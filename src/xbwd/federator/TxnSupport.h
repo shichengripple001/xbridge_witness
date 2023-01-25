@@ -30,13 +30,15 @@
 
 #include <string>
 
-namespace xbwd {
-namespace txn {
+namespace xbwd::txn {
 
+template <class T>
 [[nodiscard]] inline Json::Value
 getTxn(
     ripple::AccountID const& acc,
-    ripple::STXChainAttestationBatch const& batch,
+    T const& batch,
+    Json::StaticString const& txType,
+    Json::StaticString const& txFieldName,
     std::uint32_t seq,
     std::uint32_t lastLedgerSeq,
     ripple::XRPAmount const& fee)
@@ -44,20 +46,26 @@ getTxn(
     using namespace ripple;
 
     Json::Value txnJson;
-    txnJson[jss::TransactionType] = jss::XChainAddAttestationBatch;
+    if (!txFieldName.c_str() || !(*txFieldName.c_str()))
+        txnJson = batch.getJson(JsonOptions::none);
+    else
+        txnJson[txFieldName] = batch.getJson(JsonOptions::none);
+
+    txnJson[jss::TransactionType] = txType;
     txnJson[jss::Account] = toBase58(acc);
-    txnJson[sfXChainAttestationBatch.getJsonName()] =
-        batch.getJson(JsonOptions::none);
     txnJson[jss::Sequence] = seq;
     txnJson[jss::Fee] = to_string(fee);
     txnJson[jss::LastLedgerSequence] = lastLedgerSeq;
     return txnJson;
-};
+}
 
+template <class T>
 [[nodiscard]] inline ripple::STTx
 getSignedTxn(
     ripple::AccountID const& acc,
-    ripple::STXChainAttestationBatch const& batch,
+    T const& batch,
+    Json::StaticString const& txType,
+    Json::StaticString const& txFieldName,
     std::uint32_t seq,
     std::uint32_t lastLedgerSeq,
     ripple::XRPAmount const& fee,
@@ -66,7 +74,8 @@ getSignedTxn(
 {
     using namespace ripple;
 
-    auto const txnJson = getTxn(acc, batch, seq, lastLedgerSeq, fee);
+    auto const txnJson =
+        getTxn(acc, batch, txType, txFieldName, seq, lastLedgerSeq, fee);
 
     try
     {
@@ -90,8 +99,6 @@ getSignedTxn(
             jv("what", e.what()));
         throw;
     }
-};
+}
 
-}  // namespace txn
-
-}  // namespace xbwd
+}  // namespace xbwd::txn

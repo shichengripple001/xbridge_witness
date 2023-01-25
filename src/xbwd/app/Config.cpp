@@ -143,8 +143,14 @@ Config::Config(Json::Value const& jv)
                                            : 0)
     , logFilesToKeep(
           jv.isMember("LogFilesToKeep") ? jv["LogFilesToKeep"].asUInt() : 0)
-
+    , useBatch(jv.isMember("UseBatch") ? jv["UseBatch"].asBool() : false)
 {
+#ifndef USE_BATCH_ATTESTATION
+    if (useBatch)
+        throw std::runtime_error(
+            "Please compile with USE_BATCH_ATTESTATION to use Batch "
+            "Attestations");
+#endif
 }
 
 }  // namespace config

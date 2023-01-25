@@ -47,6 +47,8 @@ class ChainArray
     std::array<T, 2> array_;
 
 public:
+    typedef T type;
+
     ChainArray() = default;
     template <class L, class I>
     explicit ChainArray(L&& l, I&& i)
