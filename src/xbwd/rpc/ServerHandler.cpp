@@ -187,11 +187,19 @@ getHTTPHeaderTimestamp()
 void
 HTTPReply(
     int nStatus,
-    std::string const& content,
+    Json::Value&& jcontent,
     Json::Output const& output,
     beast::Journal j)
 {
-    JLOG(j.trace()) << "HTTP Reply " << nStatus << " " << content;
+    auto const content = to_string(jcontent) + '\n';
+    auto const level = jcontent.isMember(ripple::jss::error) &&
+            jcontent[ripple::jss::error].isString() &&
+            (jcontent[ripple::jss::error].asString() == "internalError")
+        ? j.warn()
+        : j.trace();
+    JLOG(level) << "HTTP Reply " << nStatus << " " << content;
+
+    assert(!jcontent[ripple::jss::result].isMember(ripple::jss::result));
 
     if (nStatus == 401)
     {
@@ -973,24 +981,6 @@ ServerHandler::processSession(std::shared_ptr<ripple::Session> const& session)
         session->close(true);
 }
 
-namespace {
-static Json::Value
-make_json_error(Json::Int code, Json::Value&& message)
-{
-    Json::Value sub{Json::objectValue};
-    sub["code"] = code;
-    sub["message"] = std::move(message);
-    Json::Value r{Json::objectValue};
-    r["error"] = sub;
-    return r;
-}
-
-Json::Int constexpr method_not_found = -32601;
-Json::Int constexpr server_overloaded = -32604;
-Json::Int constexpr forbidden = -32605;
-Json::Int constexpr wrong_version = -32606;
-}  // namespace
-
 void
 ServerHandler::processRequest(
     ripple::Port const& port,
@@ -1001,6 +991,7 @@ ServerHandler::processRequest(
     boost::string_view user)
 {
     Json::Value jsonOrig;
+
     {
         std::size_t const maxRequestSize = 2048;
         Json::Reader reader;
@@ -1008,169 +999,113 @@ ServerHandler::processRequest(
             !reader.parse(request, jsonOrig) || !jsonOrig ||
             !jsonOrig.isObject())
         {
-            HTTPReply(
-                400,
-                "Unable to parse request: " + reader.getFormatedErrorMessages(),
-                output,
-                j_);
+            Json::Value reply(Json::objectValue);
+            reply[ripple::jss::result][ripple::jss::error] = "invalidRequest";
+            reply[ripple::jss::result][ripple::jss::error_message] =
+                "Unable to parse request: " + reader.getFormatedErrorMessages();
+            HTTPReply(400, std::move(reply), output, j_);
             return;
         }
     }
+
+    auto const start(std::chrono::high_resolution_clock::now());
+
+    Json::Value const& jsonRPC = jsonOrig;
+
+    if (!jsonRPC.isMember(ripple::jss::method) ||
+        !jsonRPC[ripple::jss::method].isString() ||
+        !jsonRPC[ripple::jss::method])
+    {
+        Json::Value reply(Json::objectValue);
+        reply[ripple::jss::result][ripple::jss::error] = "invalidRequest";
+        reply[ripple::jss::result][ripple::jss::error_message] =
+            "Invalid 'method' field";
+        HTTPReply(400, std::move(reply), output, j_);
+        return;
+    }
+
+    // Extract request parameters from the request Json as `params`.
+    //
+    // If the field "params" is empty, `params` is an empty object.
+    //
+    // Otherwise, that field must be an array of length 1 (why?)
+    // and we take that first entry and validate that it's an object.
+    Json::Value params;
+    std::optional<std::string> passwordOp;
+
+    params = jsonRPC[ripple::jss::params];
+    if (!params)
+        params = Json::Value(Json::objectValue);
+    else if (!params.isArray() || params.size() != 1)
+    {
+        Json::Value reply(Json::objectValue);
+        reply[ripple::jss::result][ripple::jss::error] = "invalidRequest";
+        reply[ripple::jss::result][ripple::jss::error_message] =
+            "params unparseable";
+        HTTPReply(400, std::move(reply), output, j_);
+        return;
+    }
+    else
+    {
+        params = std::move(params[0u]);
+        if (!params.isObjectOrNull())
+        {
+            Json::Value reply(Json::objectValue);
+            reply[ripple::jss::result][ripple::jss::error] = "invalidRequest";
+            reply[ripple::jss::result][ripple::jss::error_message] =
+                "params unparseable";
+            HTTPReply(400, std::move(reply), output, j_);
+            return;
+        }
+    }
+    // note: also mask the password
+    passwordOp = [&]() -> std::optional<std::string> {
+        if (params.isMember("Password") && params["Password"].isString())
+        {
+            auto pass = params["Password"].asString();
+            params["Password"] = "<masked>";
+            return pass;
+        }
+        return {};
+    }();
+
+    // Clear header-assigned values since not positively identified from a
+    // secure_gateway.
+    forwardedFor.clear();
+    user.clear();
+
+    Json::Value const& method = jsonRPC[ripple::jss::method];
+    std::string strMethod = method.asString();
+    // Provide the JSON-RPC method as the field "command" in the request.
+    params[ripple::jss::command] = strMethod;
+    JLOG(j_.trace()) << "doRpcCommand:" << strMethod << ":" << params;
+
+    Json::Value result;
+    rpc::doCommand(app_, remoteIPAddress, params, passwordOp, result);
 
     Json::Value reply(Json::objectValue);
-    auto const start(std::chrono::high_resolution_clock::now());
+    if (result.isMember(ripple::jss::error))
     {
-        Json::Value const& jsonRPC = jsonOrig;
-
-        if (!jsonRPC.isObject())
-        {
-            Json::Value r(Json::objectValue);
-            r[ripple::jss::request] = jsonRPC;
-            r[ripple::jss::error] =
-                make_json_error(method_not_found, "Method not found");
-            reply.append(r);
-        }
-
-        if (!jsonRPC.isMember(ripple::jss::method) ||
-            jsonRPC[ripple::jss::method].isNull())
-        {
-            HTTPReply(400, "Null method", output, j_);
-            return;
-        }
-
-        Json::Value const& method = jsonRPC[ripple::jss::method];
-        if (!method.isString())
-        {
-            {
-                HTTPReply(400, "method is not string", output, j_);
-                return;
-            }
-            Json::Value r = jsonRPC;
-            r[ripple::jss::error] =
-                make_json_error(method_not_found, "method is not string");
-            reply.append(r);
-        }
-
-        std::string strMethod = method.asString();
-        if (strMethod.empty())
-        {
-            {
-                HTTPReply(400, "method is empty", output, j_);
-                return;
-            }
-            Json::Value r = jsonRPC;
-            r[ripple::jss::error] =
-                make_json_error(method_not_found, "method is empty");
-            reply.append(r);
-        }
-
-        // Extract request parameters from the request Json as `params`.
-        //
-        // If the field "params" is empty, `params` is an empty object.
-        //
-        // Otherwise, that field must be an array of length 1 (why?)
-        // and we take that first entry and validate that it's an object.
-        Json::Value params;
-        std::optional<std::string> passwordOp{};
-        {
-            params = jsonRPC[ripple::jss::params];
-            if (!params)
-                params = Json::Value(Json::objectValue);
-
-            else if (!params.isArray() || params.size() != 1)
-            {
-                HTTPReply(400, "params unparseable", output, j_);
-                return;
-            }
-            else
-            {
-                params = std::move(params[0u]);
-                if (!params.isObjectOrNull())
-                {
-                    HTTPReply(400, "params unparseable", output, j_);
-                    return;
-                }
-            }
-            // note: also mask the password
-            passwordOp = [&]() -> std::optional<std::string> {
-                if (params.isMember("Password") &&
-                    params["Password"].isString())
-                {
-                    auto pass = params["Password"].asString();
-                    params["Password"] = "********";
-                    return pass;
-                }
-                return {};
-            }();
-        }
-
-        /**
-         * Clear header-assigned values since not positively identified from a
-         * secure_gateway.
-         */
-        {
-            forwardedFor.clear();
-            user.clear();
-        }
-
-        // Provide the JSON-RPC method as the field "command" in the request.
-        params[ripple::jss::command] = strMethod;
-        JLOG(j_.trace()) << "doRpcCommand:" << strMethod << ":" << params;
-
-        Json::Value result;
-        rpc::doCommand(app_, remoteIPAddress, params, passwordOp, result);
-
-        Json::Value r(Json::objectValue);
-        if (result.isMember(ripple::jss::error))
-        {
-            result[ripple::jss::status] = ripple::jss::error;
-            result["code"] = result[ripple::jss::error_code];
-            result["message"] = result[ripple::jss::error_message];
-            result.removeMember(ripple::jss::error_message);
-            JLOG(j_.debug()) << "rpcError: " << result[ripple::jss::error]
-                             << ": " << result[ripple::jss::error_message];
-            r[ripple::jss::error] = std::move(result);
-        }
-        else
-        {
-            result[ripple::jss::status] = ripple::jss::success;
-            r[ripple::jss::result] = std::move(result);
-        }
-
-        if (params.isMember(ripple::jss::jsonrpc))
-            r[ripple::jss::jsonrpc] = params[ripple::jss::jsonrpc];
-        if (params.isMember(ripple::jss::ripplerpc))
-            r[ripple::jss::ripplerpc] = params[ripple::jss::ripplerpc];
-        if (params.isMember(ripple::jss::id))
-            r[ripple::jss::id] = params[ripple::jss::id];
-        reply = std::move(r);
-
-        if (reply.isMember(ripple::jss::result) &&
-            reply[ripple::jss::result].isMember(ripple::jss::result))
-        {
-            reply = reply[ripple::jss::result];
-            if (reply.isMember(ripple::jss::status))
-            {
-                reply[ripple::jss::result][ripple::jss::status] =
-                    reply[ripple::jss::status];
-                reply.removeMember(ripple::jss::status);
-            }
-        }
+        result[ripple::jss::status] = ripple::jss::error;
+        JLOG(j_.debug()) << "rpcError: " << result[ripple::jss::error]
+                         << " error_message: "
+                         << result[ripple::jss::error_message]
+                         << " error_code: " << result[ripple::jss::error_code];
     }
-    auto response = to_string(reply);
-
-    response += '\n';
-
-    if (auto stream = j_.debug())
+    else
     {
-        static const int maxSize = 10000;
-        if (response.size() <= maxSize)
-            stream << "Reply: " << response;
-        else
-            stream << "Reply: " << response.substr(0, maxSize);
+        result[ripple::jss::status] = ripple::jss::success;
     }
+    reply[ripple::jss::result] = std::move(result);
 
-    HTTPReply(200, response, output, j_);
+    if (params.isMember(ripple::jss::jsonrpc))
+        reply[ripple::jss::jsonrpc] = params[ripple::jss::jsonrpc];
+    if (params.isMember(ripple::jss::ripplerpc))
+        reply[ripple::jss::ripplerpc] = params[ripple::jss::ripplerpc];
+    if (params.isMember(ripple::jss::id))
+        reply[ripple::jss::id] = params[ripple::jss::id];
+
+    HTTPReply(200, std::move(reply), output, j_);
 }
 
 //------------------------------------------------------------------------------

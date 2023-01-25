@@ -29,27 +29,23 @@ void
 doStop(App& app, Json::Value const& in, Json::Value& result)
 {
     // TODO: This is a privilated command.
-    result["request"] = in;
-    Json::Value status;
-    status["status"] = "stopping";
-    result["result"] = status;
+    result[ripple::jss::request] = in;
+    result[ripple::jss::status] = "stopping";
     app.signalStop();
 }
 
 void
 doServerInfo(App& app, Json::Value const& in, Json::Value& result)
 {
-    result["request"] = in;
+    result[ripple::jss::request] = in;
     auto const f = app.federator();
     if (!f)
     {
-        result["error"] = "internal error";
+        result[ripple::jss::error] = "internalError";
+        result[ripple::jss::error_message] = "internal federator error";
         return;
     }
-
-    Json::Value inner;
-    inner["info"] = f->getInfo();
-    result["result"] = inner;
+    result["info"] = f->getInfo();
 }
 
 void
@@ -63,7 +59,7 @@ doSelectAll(
     // TODO: Remove me
     //
 
-    result["request"] = in;
+    result[ripple::jss::request] = in;
 
     auto const& tblName = db_init::xChainTableName(chainDir);
 
@@ -155,7 +151,7 @@ doSelectAll(
 
         ripple::STXChainAttestationBatch batch{
             bridge, claims.begin(), claims.end()};
-        result["result"]["XChainAttestationBatch"] =
+        result["XChainAttestationBatch"] =
             batch.getJson(ripple::JsonOptions::none);
     }
 }
@@ -175,7 +171,7 @@ doSelectAllIssuing(App& app, Json::Value const& in, Json::Value& result)
 void
 doWitness(App& app, Json::Value const& in, Json::Value& result)
 {
-    result["request"] = in;
+    result[ripple::jss::request] = in;
     auto optBridge = optFromJson<ripple::STXChainBridge>(in, "bridge");
     auto optAmt = optFromJson<ripple::STAmount>(in, "sending_amount");
     auto optClaimID = optFromJson<std::uint64_t>(in, "claim_id");
@@ -199,7 +195,8 @@ doWitness(App& app, Json::Value const& in, Json::Value& result)
         }();
         if (!missingOrInvalidField.empty())
         {
-            result["error"] = fmt::format(
+            result[ripple::jss::error] = "invalidRequest";
+            result[ripple::jss::error_message] = fmt::format(
                 "Missing or invalid field: {}", missingOrInvalidField);
             return;
         }
@@ -220,7 +217,8 @@ doWitness(App& app, Json::Value const& in, Json::Value& result)
     {
         // TODO: Write log message
         // put expected value in the error message?
-        result["error"] = fmt::format(
+        result[ripple::jss::error] = "invalidRequest";
+        result[ripple::jss::error_message] = fmt::format(
             "Specified door account does not match any sidechain door "
             "account.");
         return;
@@ -311,12 +309,13 @@ doWitness(App& app, Json::Value const& in, Json::Value& result)
                 optDst};
 
             ripple::STXChainAttestationBatch batch{bridge, &claim, &claim + 1};
-            result["result"]["XChainAttestationBatch"] =
+            result["XChainAttestationBatch"] =
                 batch.getJson(ripple::JsonOptions::none);
         }
         else
         {
-            result["error"] = "No such transaction";
+            result[ripple::jss::error] = "invalidRequest";
+            result[ripple::jss::error_message] = "No such transaction";
         }
     }
 }
@@ -324,7 +323,7 @@ doWitness(App& app, Json::Value const& in, Json::Value& result)
 void
 doWitnessAccountCreate(App& app, Json::Value const& in, Json::Value& result)
 {
-    result["request"] = in;
+    result[ripple::jss::request] = in;
     auto optBridge = optFromJson<ripple::STXChainBridge>(in, "bridge");
     auto optAmt = optFromJson<ripple::STAmount>(in, "sending_amount");
     auto optRewardAmt = optFromJson<ripple::STAmount>(in, "reward_amount");
@@ -357,7 +356,8 @@ doWitnessAccountCreate(App& app, Json::Value const& in, Json::Value& result)
         }();
         if (!missingOrInvalidField.empty())
         {
-            result["error"] = fmt::format(
+            result[ripple::jss::error] = "invalidRequest";
+            result[ripple::jss::error_message] = fmt::format(
                 "Missing or invalid field: {}", missingOrInvalidField);
             return;
         }
@@ -380,7 +380,8 @@ doWitnessAccountCreate(App& app, Json::Value const& in, Json::Value& result)
     {
         // TODO: Write log message
         // put expected value in the error message?
-        result["error"] = fmt::format(
+        result[ripple::jss::error] = "invalidRequest";
+        result[ripple::jss::error] = fmt::format(
             "Specified door account does not match any sidechain door "
             "account.");
         return;
@@ -468,12 +469,13 @@ doWitnessAccountCreate(App& app, Json::Value const& in, Json::Value& result)
             ripple::AttestationBatch::AttestationClaim* nullClaim = nullptr;
             ripple::STXChainAttestationBatch batch{
                 bridge, nullClaim, nullClaim, &claim, &claim + 1};
-            result["result"]["XChainAttestationBatch"] =
+            result["XChainAttestationBatch"] =
                 batch.getJson(ripple::JsonOptions::none);
         }
         else
         {
-            result["error"] = "No such transaction";
+            result[ripple::jss::error] = "invalidRequest";
+            result[ripple::jss::error_message] = "No such transaction";
         }
     }
 }
@@ -481,11 +483,12 @@ doWitnessAccountCreate(App& app, Json::Value const& in, Json::Value& result)
 void
 doAttestTx(App& app, Json::Value const& in, Json::Value& result)
 {
-    result["request"] = in;
+    result[ripple::jss::request] = in;
     auto const f = app.federator();
     if (!f)
     {
-        result["error"] = "internal error";
+        result[ripple::jss::error] = "internalError";
+        result[ripple::jss::error_message] = "internal federator error";
         return;
     }
 
@@ -504,7 +507,8 @@ doAttestTx(App& app, Json::Value const& in, Json::Value& result)
         }();
         if (!missingOrInvalidField.empty())
         {
-            result["error"] = fmt::format(
+            result[ripple::jss::error] = "invalidRequest";
+            result[ripple::jss::error_message] = fmt::format(
                 "Missing or invalid field: {}", missingOrInvalidField);
             return;
         }
@@ -623,7 +627,9 @@ doCommand(
     if (it == handlers.end())
     {
         // TODO: regularize error handling
-        result["error"] = fmt::format("No such method: {}", cmd);
+        result[ripple::jss::error] = "invalidRequest";
+        result[ripple::jss::error_message] =
+            fmt::format("No such method: {}", cmd);
         return;
     }
 
@@ -634,7 +640,8 @@ doCommand(
             passwordOp,
             remoteIPAddress.address()))
     {
-        result["error"] = fmt::format(
+        result[ripple::jss::error] = "notAuthorized";
+        result[ripple::jss::error_message] = fmt::format(
             "{} method requires ADMIN privilege. Request authentication "
             "failed.",
             cmd);
