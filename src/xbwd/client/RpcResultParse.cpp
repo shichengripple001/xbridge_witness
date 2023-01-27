@@ -17,9 +17,9 @@
 */
 //==============================================================================
 
-#include <xbwd/client/RpcResultParse.h>
 #include <ripple/protocol/SField.h>
 #include <ripple/protocol/jss.h>
+#include <xbwd/client/RpcResultParse.h>
 
 namespace xbwd {
 
@@ -100,7 +100,8 @@ parseXChainTxnType(Json::Value const& transaction)
         {ripple::jss::XChainCommit.c_str(), xChainCommit},
         {ripple::jss::XChainClaim.c_str(), xChainClaim},
         {ripple::jss::XChainAccountCreateCommit.c_str(), xChainCreateAccount},
-        {ripple::jss::XChainAddAttestation.c_str(), xChainAttestation},
+        {ripple::jss::XChainAddAttestationBatch.c_str(),
+         xChainAttestationBatch},
         {ripple::jss::SignerListSet.c_str(), SignerListSet},
         {ripple::jss::AccountSet.c_str(), AccountSet},
         {ripple::jss::SetRegularKey.c_str(), SetRegularKey},

@@ -570,7 +570,7 @@ ChainListener::processMessage(Json::Value const& msg)
             pushEvent(std::move(e));
         }
         break;
-        case XChainTxnType::xChainAttestation: {
+        case XChainTxnType::xChainAttestationBatch: {
             if (rpcResultParse::fieldMatchesStr(
                     transaction,
                     ripple::jss::Account,
