@@ -44,7 +44,7 @@ getTxn(
     using namespace ripple;
 
     Json::Value txnJson;
-    txnJson[jss::TransactionType] = jss::XChainAddAttestation;
+    txnJson[jss::TransactionType] = jss::XChainAddAttestationBatch;
     txnJson[jss::Account] = toBase58(acc);
     txnJson[sfXChainAttestationBatch.getJsonName()] =
         batch.getJson(JsonOptions::none);
