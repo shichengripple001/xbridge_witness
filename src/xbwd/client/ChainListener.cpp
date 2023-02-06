@@ -405,9 +405,9 @@ ChainListener::processMessage(Json::Value const& msg)
     auto const dst = rpcResultParse::parseDstAccount(transaction, *txnTypeOpt);
 
     auto const ledgerBoundary = [&]() -> bool {
-        if (msg.isMember(ripple::jss::account_history_ledger_boundary) &&
-            msg[ripple::jss::account_history_ledger_boundary].isBool() &&
-            msg[ripple::jss::account_history_ledger_boundary].asBool())
+        if (msg.isMember(ripple::jss::account_history_boundary) &&
+            msg[ripple::jss::account_history_boundary].isBool() &&
+            msg[ripple::jss::account_history_boundary].asBool())
         {
             JLOGV(
                 j_.trace(),
