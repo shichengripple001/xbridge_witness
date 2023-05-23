@@ -15,6 +15,7 @@
 #include <ripple/protocol/jss.h>
 
 #include <fmt/core.h>
+#include <openssl/crypto.h>
 #include <soci/soci-backend.h>
 
 #include <functional>
@@ -634,11 +635,27 @@ isAdmin(
     // verification, if any.
     if (ac.pass)
     {
-        bool userMatch = params.isMember("Username") &&
-            params["Username"].isString() &&
-            params["Username"].asString() == (*ac.pass).user;
-        bool passwordMatch = passwordOp && *passwordOp == (*ac.pass).password;
-        if (!userMatch || !passwordMatch)
+        std::string const paramUser =
+            params.isMember("Username") && params["Username"].isString()
+            ? params["Username"].asString()
+            : std::string();
+
+        unsigned const origAuthSize =
+            ac.pass->user.size() + ac.pass->password.size();
+        unsigned const inAuthSize =
+            paramUser.size() + (passwordOp ? passwordOp->size() : 0);
+        unsigned const toAllocateSize =
+            std::max(origAuthSize, inAuthSize) + 1;  // +1 for \n separator
+
+        std::string inAuth(toAllocateSize, char()),
+            origAuth(toAllocateSize, char());
+        inAuth = paramUser + '\n' + (passwordOp ? *passwordOp : std::string());
+        origAuth = ac.pass->user + '\n' + ac.pass->password;
+
+        // +2 == +1 for \n separator and +1 for \0 comparison
+        bool const dataMatch =
+            !CRYPTO_memcmp(inAuth.c_str(), origAuth.c_str(), origAuthSize + 2);
+        if (!dataMatch)
             return false;
     }
 

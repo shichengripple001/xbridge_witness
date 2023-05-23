@@ -330,7 +330,22 @@ authorized(
         return false;
     std::string strUser = strUserPass.substr(0, nColon);
     std::string strPassword = strUserPass.substr(nColon + 1);
-    return strUser == port.user && strPassword == port.password;
+
+    unsigned const origAuthSize = port.user.size() + port.password.size();
+    unsigned const inAuthSize = strUser.size() + strPassword.size();
+    unsigned const toAllocateSize =
+        std::max(origAuthSize, inAuthSize) + 1;  // +1 for \n separator
+
+    std::string inAuthData(toAllocateSize, char()),
+        origAuthData(toAllocateSize, char());
+    inAuthData = strUser + '\n' + strPassword;
+    origAuthData = port.user + '\n' + port.password;
+
+    // +2 == +1 for \n separator and +1 for \0 comparison
+    bool const dataMatch = !CRYPTO_memcmp(
+        inAuthData.c_str(), origAuthData.c_str(), origAuthSize + 2);
+
+    return dataMatch;
 }
 }  // namespace
 // TODO Remove this - it's a hack to get around linker errors
