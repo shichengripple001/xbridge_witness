@@ -57,6 +57,8 @@ private:
     std::unordered_map<std::uint32_t, RpcCallback> GUARDED_BY(callbacksMtx_)
         callbacks_;
 
+    bool stopHistory_;
+
 public:
     ChainListener(
         ChainType chainType,

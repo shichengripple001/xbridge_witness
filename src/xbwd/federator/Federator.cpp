@@ -549,8 +549,7 @@ Federator::initSync(
     if (!initSync_[ct].historyDone_)
     {
         if (initSync_[ct].dbTxnHash_ == eHash ||
-            (chains_[otherChain(ct)].lastAttestedCommitTx_ &&
-             *chains_[otherChain(ct)].lastAttestedCommitTx_ == eHash))
+            (chains_[otherChain(ct)].lastAttestedCommitTx_ == eHash))
         {
             initSync_[ct].historyDone_ = true;
             initSync_[ct].rpcOrder_ = rpcOrder;
@@ -650,11 +649,11 @@ Federator::tryFinishInitSync(ChainType const ct)
         return;
     }
 
-    if (autoSubmit_[ct])
-        sendDBAttests(ct);
-
     for (auto const cht : {ChainType::locking, ChainType::issuing})
     {
+        if (autoSubmit_[cht])
+            sendDBAttests(cht);
+
         // auto const& ochain = chains_[otherChain(cht)];
         auto& repl(replays_[cht]);
 
