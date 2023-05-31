@@ -256,6 +256,30 @@ isDeletedClaimId(Json::Value const& meta, std::uint64_t claimID)
     return false;
 }
 
+bool
+isDeletedAccCnt(Json::Value const& meta, std::uint64_t createCnt)
+{
+    if (!meta.isMember("AffectedNodes"))
+        return false;
+
+    for (auto const& an : meta["AffectedNodes"])
+    {
+        if (!an.isMember("DeletedNode"))
+            continue;
+        auto const& dn = an["DeletedNode"];
+        if (!dn.isMember("FinalFields"))
+            continue;
+        auto const& ff = dn["FinalFields"];
+        auto const optCreateCnt = Json::getOptional<std::uint64_t>(
+            ff, ripple::sfXChainAccountCreateCount);
+
+        if (optCreateCnt == createCnt)
+            return true;
+    }
+
+    return false;
+}
+
 }  // namespace
 
 void
@@ -577,6 +601,10 @@ ChainListener::processMessage(Json::Value const& msg)
                         transaction, ripple::sfXChainAccountCreateCount);
                     if (!accountCreateCount)
                         return ignore_ret("no accountCreateCount");
+
+                    if (!isOwn && !isDeletedAccCnt(meta, *accountCreateCount))
+                        return ignore_ret(
+                            "accountCreateCount not in DeletedNode");
                 }
 
                 pushEvent(event::XChainAttestsResult{
