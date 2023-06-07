@@ -18,6 +18,8 @@
 */
 //==============================================================================
 
+#include <xbwd/basics/StructuredLog.h>
+
 #include <ripple/beast/utility/Journal.h>
 #include <ripple/json/json_value.h>
 #include <ripple/protocol/AccountID.h>

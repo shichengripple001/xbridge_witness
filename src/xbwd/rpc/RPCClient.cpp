@@ -1,6 +1,7 @@
-#include "RPCClient.h"
+#include <xbwd/rpc/RPCClient.h>
 
 #include <xbwd/app/Config.h>
+#include <xbwd/basics/StructuredLog.h>
 
 #include <boost/asio/connect.hpp>
 #include <boost/beast/core/flat_buffer.hpp>
@@ -83,8 +84,8 @@ RPCClient::RPCClient(rpc::AddrEndpoint const& ae, beast::Journal j)
     JLOGV(
         j_.trace(),
         "Client connected",
-        ripple::jv("Host", ep_.address().to_string()),
-        ripple::jv("Port", ep_.port()));
+        jv("Host", ep_.address().to_string()),
+        jv("Port", ep_.port()));
 }
 
 RPCClient::~RPCClient()
@@ -97,7 +98,7 @@ RPCClient::~RPCClient()
         JLOGV(
             j_.error(),
             "Error shutdown connection",
-            ripple::jv("message", ec.message()));
+            jv("message", ec.message()));
     }
 }
 
@@ -112,7 +113,7 @@ RPCClient::post(const Json::Value& jreq)
     req.body() = body;
     req.prepare_payload();
 
-    JLOGV(j_.info(), "Sending", ripple::jv("msg", jreq.toStyledString()));
+    JLOGV(j_.info(), "Sending", jv("msg", jreq.toStyledString()));
 
     Json::Value jres;
 
@@ -128,11 +129,11 @@ RPCClient::post(const Json::Value& jreq)
         Json::Reader jr;
         jr.parse(strBody, jres);
 
-        JLOGV(j_.info(), "Response", ripple::jv("msg", jres.toStyledString()));
+        JLOGV(j_.info(), "Response", jv("msg", jres.toStyledString()));
     }
     catch (std::exception const& e)
     {
-        JLOGV(j_.error(), "Exception in post", ripple::jv("message", e.what()));
+        JLOGV(j_.error(), "Exception in post", jv("message", e.what()));
         jres["exception"] = e.what();
         return {-1, jres};
     }

@@ -18,6 +18,8 @@
 //==============================================================================
 
 #include <xbwd/client/ChainListener.h>
+
+#include <xbwd/basics/StructuredLog.h>
 #include <xbwd/client/RpcResultParse.h>
 #include <xbwd/client/WebsocketClient.h>
 #include <xbwd/federator/Federator.h>
@@ -173,12 +175,12 @@ ChainListener::send(
     JLOGV(
         j_.trace(),
         "ChainListener send",
-        ripple::jv("command", cmd),
-        ripple::jv("params", params),
-        ripple::jv("chain_name", to_string(chainType_)));
+        jv("command", cmd),
+        jv("params", params),
+        jv("chain_name", to_string(chainType_)));
 
     auto id = wsClient_->send(cmd, params);
-    JLOGV(j_.trace(), "ChainListener send id", ripple::jv("id", id));
+    JLOGV(j_.trace(), "ChainListener send id", jv("id", id));
 
     std::lock_guard lock(callbacksMtx_);
     callbacks_.emplace(id, onResponse);
@@ -220,8 +222,8 @@ ChainListener::onMessage(Json::Value const& msg)
         JLOGV(
             j_.trace(),
             "ChainListener onMessage, reply to a callback",
-            ripple::jv("chain_name", to_string(chainType_)),
-            ripple::jv("msg", msg.toStyledString()));
+            jv("chain_name", to_string(chainType_)),
+            jv("msg", msg.toStyledString()));
         (*callbackOpt)(msg);
     }
     else
@@ -291,8 +293,8 @@ ChainListener::processMessage(Json::Value const& msg)
         JLOGV(
             j_.trace(),
             "ignoring listener message",
-            ripple::jv("chain_name", chainName),
-            ripple::jv("reason", reason),
+            jv("chain_name", chainName),
+            jv("reason", reason),
             std::forward<decltype(v)>(v)...);
     };
 
@@ -310,9 +312,8 @@ ChainListener::processMessage(Json::Value const& msg)
     if (isHistory && stopHistory_)
         return ignore_ret(
             "stopped processing historical tx",
-            ripple::jv(
-                ripple::jss::account_history_tx_index.c_str(),
-                *txnHistoryIndex));
+            jv(ripple::jss::account_history_tx_index.c_str(),
+               *txnHistoryIndex));
 
     // Even though this lock has a large scope, this function does very little
     // processing and should run relatively quickly
@@ -321,8 +322,8 @@ ChainListener::processMessage(Json::Value const& msg)
     JLOGV(
         j_.trace(),
         "chain listener process message",
-        ripple::jv("chain_name", chainName),
-        ripple::jv("msg", msg.toStyledString()));
+        jv("chain_name", chainName),
+        jv("msg", msg.toStyledString()));
 
     auto tryPushNewLedgerEvent = [&](Json::Value const& result) -> bool {
         if (result.isMember(ripple::jss::fee_base) &&
@@ -430,8 +431,8 @@ ChainListener::processMessage(Json::Value const& msg)
             JLOGV(
                 j_.trace(),
                 "ledger boundary",
-                ripple::jv("seq", *lgrSeq),
-                ripple::jv("chain_name", chainName));
+                jv("seq", *lgrSeq),
+                jv("chain_name", chainName));
             return true;
         }
         return false;
@@ -562,12 +563,11 @@ ChainListener::processMessage(Json::Value const& msg)
                 JLOGV(
                     j_.trace(),
                     "Attestation processing",
-                    ripple::jv("chain_name", chainName),
-                    ripple::jv("src", *src),
-                    ripple::jv(
-                        "dst",
-                        !dst || !*dst ? std::string() : ripple::toBase58(*dst)),
-                    ripple::jv("witnessAccountStr_", witnessAccountStr_));
+                    jv("chain_name", chainName),
+                    jv("src", *src),
+                    jv("dst",
+                       !dst || !*dst ? std::string() : ripple::toBase58(*dst)),
+                    jv("witnessAccountStr_", witnessAccountStr_));
 
                 auto osrc = rpcResultParse::parseOtherSrcAccount(
                     transaction, *txnTypeOpt);
@@ -579,7 +579,7 @@ ChainListener::processMessage(Json::Value const& msg)
                      !odst))
                     return ignore_ret(
                         "osrc/odst account missing",
-                        ripple::jv("witnessAccountStr_", witnessAccountStr_));
+                        jv("witnessAccountStr_", witnessAccountStr_));
 
                 std::optional<std::uint64_t> claimID, accountCreateCount;
 
@@ -623,7 +623,7 @@ ChainListener::processMessage(Json::Value const& msg)
             else
                 return ignore_ret(
                     "not an attestation sent from this server",
-                    ripple::jv("witnessAccountStr_", witnessAccountStr_));
+                    jv("witnessAccountStr_", witnessAccountStr_));
         }
         break;
         case XChainTxnType::SignerListSet: {
@@ -659,9 +659,9 @@ processSignerListSetGeneral(
         JLOGV(
             j.warn(),
             errTopic,
-            ripple::jv("reason", reason),
-            ripple::jv("chain_name", chainName),
-            ripple::jv("msg", msg));
+            jv("reason", reason),
+            jv("chain_name", chainName),
+            jv("msg", msg));
         return std::optional<std::unordered_set<ripple::AccountID>>();
     };
 
@@ -713,9 +713,9 @@ ChainListener::processAccountInfo(Json::Value const& msg) noexcept
         JLOGV(
             j_.warn(),
             errTopic,
-            ripple::jv("reason", reason),
-            ripple::jv("chain_name", chainName),
-            ripple::jv("msg", msg));
+            jv("reason", reason),
+            jv("chain_name", chainName),
+            jv("msg", msg));
     };
 
     try
@@ -788,18 +788,18 @@ ChainListener::processAccountInfo(Json::Value const& msg) noexcept
         JLOGV(
             j_.warn(),
             errTopic,
-            ripple::jv("exception", e.what()),
-            ripple::jv("chain_name", chainName),
-            ripple::jv("msg", msg));
+            jv("exception", e.what()),
+            jv("chain_name", chainName),
+            jv("msg", msg));
     }
     catch (...)
     {
         JLOGV(
             j_.warn(),
             errTopic,
-            ripple::jv("exception", "unknown exception"),
-            ripple::jv("chain_name", chainName),
-            ripple::jv("msg", msg));
+            jv("exception", "unknown exception"),
+            jv("chain_name", chainName),
+            jv("msg", msg));
     }
 }
 
@@ -813,9 +813,9 @@ ChainListener::processSigningAccountInfo(Json::Value const& msg) noexcept
         JLOGV(
             j_.warn(),
             errTopic,
-            ripple::jv("reason", reason),
-            ripple::jv("chain_name", chainName),
-            ripple::jv("msg", msg));
+            jv("reason", reason),
+            jv("chain_name", chainName),
+            jv("msg", msg));
     };
 
     try
@@ -861,18 +861,18 @@ ChainListener::processSigningAccountInfo(Json::Value const& msg) noexcept
         JLOGV(
             j_.warn(),
             errTopic,
-            ripple::jv("exception", e.what()),
-            ripple::jv("chain_name", chainName),
-            ripple::jv("msg", msg));
+            jv("exception", e.what()),
+            jv("chain_name", chainName),
+            jv("msg", msg));
     }
     catch (...)
     {
         JLOGV(
             j_.warn(),
             errTopic,
-            ripple::jv("exception", "unknown exception"),
-            ripple::jv("chain_name", chainName),
-            ripple::jv("msg", msg));
+            jv("exception", "unknown exception"),
+            jv("chain_name", chainName),
+            jv("msg", msg));
     }
 }
 
@@ -886,9 +886,9 @@ ChainListener::processSignerListSet(Json::Value const& msg) noexcept
         JLOGV(
             j_.warn(),
             errTopic,
-            ripple::jv("reason", reason),
-            ripple::jv("chain_name", chainName),
-            ripple::jv("msg", msg));
+            jv("reason", reason),
+            jv("chain_name", chainName),
+            jv("msg", msg));
     };
 
     try
@@ -926,9 +926,9 @@ ChainListener::processSignerListSet(Json::Value const& msg) noexcept
             JLOGV(
                 j_.warn(),
                 "processing signer list message",
-                ripple::jv("warning", "Door account type mismatch"),
-                ripple::jv("chain_type", to_string(chainType_)),
-                ripple::jv("tx_type", to_string(evSignSet.chainType_)));
+                jv("warning", "Door account type mismatch"),
+                jv("chain_type", to_string(chainType_)),
+                jv("tx_type", to_string(evSignSet.chainType_)));
         }
 
         pushEvent(std::move(evSignSet));
@@ -938,18 +938,18 @@ ChainListener::processSignerListSet(Json::Value const& msg) noexcept
         JLOGV(
             j_.warn(),
             errTopic,
-            ripple::jv("exception", e.what()),
-            ripple::jv("chain_name", chainName),
-            ripple::jv("msg", msg));
+            jv("exception", e.what()),
+            jv("chain_name", chainName),
+            jv("msg", msg));
     }
     catch (...)
     {
         JLOGV(
             j_.warn(),
             errTopic,
-            ripple::jv("exception", "unknown exception"),
-            ripple::jv("chain_name", chainName),
-            ripple::jv("msg", msg));
+            jv("exception", "unknown exception"),
+            jv("chain_name", chainName),
+            jv("msg", msg));
     }
 }
 
@@ -963,9 +963,9 @@ ChainListener::processAccountSet(Json::Value const& msg) noexcept
         JLOGV(
             j_.warn(),
             errTopic,
-            ripple::jv("reason", reason),
-            ripple::jv("chain_name", chainName),
-            ripple::jv("msg", msg));
+            jv("reason", reason),
+            jv("chain_name", chainName),
+            jv("msg", msg));
     };
 
     try
@@ -1004,9 +1004,9 @@ ChainListener::processAccountSet(Json::Value const& msg) noexcept
             JLOGV(
                 j_.warn(),
                 "processing account set",
-                ripple::jv("warning", "Door account type mismatch"),
-                ripple::jv("chain_type", to_string(chainType_)),
-                ripple::jv("tx_type", to_string(evAccSet.chainType_)));
+                jv("warning", "Door account type mismatch"),
+                jv("chain_type", to_string(chainType_)),
+                jv("tx_type", to_string(evAccSet.chainType_)));
         }
         pushEvent(std::move(evAccSet));
     }
@@ -1015,18 +1015,18 @@ ChainListener::processAccountSet(Json::Value const& msg) noexcept
         JLOGV(
             j_.warn(),
             errTopic,
-            ripple::jv("exception", e.what()),
-            ripple::jv("chain_name", chainName),
-            ripple::jv("msg", msg));
+            jv("exception", e.what()),
+            jv("chain_name", chainName),
+            jv("msg", msg));
     }
     catch (...)
     {
         JLOGV(
             j_.warn(),
             errTopic,
-            ripple::jv("exception", "unknown exception"),
-            ripple::jv("chain_name", chainName),
-            ripple::jv("msg", msg));
+            jv("exception", "unknown exception"),
+            jv("chain_name", chainName),
+            jv("msg", msg));
     }
 }
 
@@ -1040,9 +1040,9 @@ ChainListener::processSetRegularKey(Json::Value const& msg) noexcept
         JLOGV(
             j_.warn(),
             errTopic,
-            ripple::jv("reason", reason),
-            ripple::jv("chain_name", chainName),
-            ripple::jv("msg", msg));
+            jv("reason", reason),
+            jv("chain_name", chainName),
+            jv("msg", msg));
     };
 
     try
@@ -1075,9 +1075,9 @@ ChainListener::processSetRegularKey(Json::Value const& msg) noexcept
             JLOGV(
                 j_.warn(),
                 "processing account set",
-                ripple::jv("warning", "Door account type mismatch"),
-                ripple::jv("chain_type", to_string(chainType_)),
-                ripple::jv("tx_type", to_string(evSetKey.chainType_)));
+                jv("warning", "Door account type mismatch"),
+                jv("chain_type", to_string(chainType_)),
+                jv("tx_type", to_string(evSetKey.chainType_)));
         }
 
         std::string const regularKeyStr = msg.isMember("RegularKey")
@@ -1099,18 +1099,18 @@ ChainListener::processSetRegularKey(Json::Value const& msg) noexcept
         JLOGV(
             j_.warn(),
             errTopic,
-            ripple::jv("exception", e.what()),
-            ripple::jv("chain_name", chainName),
-            ripple::jv("msg", msg));
+            jv("exception", e.what()),
+            jv("chain_name", chainName),
+            jv("msg", msg));
     }
     catch (...)
     {
         JLOGV(
             j_.warn(),
             errTopic,
-            ripple::jv("exception", "unknown exception"),
-            ripple::jv("chain_name", chainName),
-            ripple::jv("msg", msg));
+            jv("exception", "unknown exception"),
+            jv("chain_name", chainName),
+            jv("msg", msg));
     }
 }
 
@@ -1124,9 +1124,9 @@ ChainListener::processTx(Json::Value const& v) noexcept
         JLOGV(
             j_.warn(),
             errTopic,
-            ripple::jv("reason", reason),
-            ripple::jv("chain_name", chainName),
-            ripple::jv("msg", v));
+            jv("reason", reason),
+            jv("chain_name", chainName),
+            jv("msg", v));
     };
 
     try
@@ -1245,18 +1245,18 @@ ChainListener::processTx(Json::Value const& v) noexcept
         JLOGV(
             j_.warn(),
             errTopic,
-            ripple::jv("exception", e.what()),
-            ripple::jv("chain_name", chainName),
-            ripple::jv("msg", v));
+            jv("exception", e.what()),
+            jv("chain_name", chainName),
+            jv("msg", v));
     }
     catch (...)
     {
         JLOGV(
             j_.warn(),
             errTopic,
-            ripple::jv("exception", "unknown exception"),
-            ripple::jv("chain_name", chainName),
-            ripple::jv("msg", v));
+            jv("exception", "unknown exception"),
+            jv("chain_name", chainName),
+            jv("msg", v));
     }
 }
 

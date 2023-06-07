@@ -19,6 +19,8 @@
 
 #include <xbwd/client/WebsocketClient.h>
 
+#include <xbwd/basics/StructuredLog.h>
+
 #include <ripple/basics/Log.h>
 #include <ripple/json/Output.h>
 #include <ripple/json/json_reader.h>
@@ -137,17 +139,17 @@ WebsocketClient::connect()
         JLOGV(
             j_.info(),
             "WebsocketClient connected to",
-            ripple::jv("ip", ep_.address()),
-            ripple::jv("port", ep_.port()));
+            jv("ip", ep_.address()),
+            jv("port", ep_.port()));
     }
     catch (std::exception& e)
     {
         JLOGV(
             j_.debug(),
             "WebsocketClient::exception connecting to endpoint",
-            ripple::jv("what", e.what()),
-            ripple::jv("ip", ep_.address()),
-            ripple::jv("port", ep_.port()));
+            jv("what", e.what()),
+            jv("ip", ep_.address()),
+            jv("port", ep_.port()));
         reconnect();
     }
 }
@@ -162,7 +164,7 @@ WebsocketClient::send(std::string const& cmd, Json::Value params)
     auto const id = nextId_++;
     params[ripple::jss::id] = id;
     auto const s = to_string(params);
-    JLOGV(j_.trace(), "WebsocketClient::send", ripple::jv("msg", params));
+    JLOGV(j_.trace(), "WebsocketClient::send", jv("msg", params));
     try
     {
         std::lock_guard l{m_};
@@ -181,10 +183,7 @@ WebsocketClient::onReadMsg(error_code const& ec)
 {
     if (ec)
     {
-        JLOGV(
-            j_.trace(),
-            "WebsocketClient::onReadMsg error",
-            ripple::jv("ec", ec));
+        JLOGV(j_.trace(), "WebsocketClient::onReadMsg error", jv("ec", ec));
         if (ec == boost::beast::websocket::error::closed)
             peerClosed_ = true;
 
@@ -197,7 +196,7 @@ WebsocketClient::onReadMsg(error_code const& ec)
     Json::Reader jr;
     jr.parse(buffer_string(rb_.data()), jval);
     rb_.consume(rb_.size());
-    JLOGV(j_.trace(), "WebsocketClient::onReadMsg", ripple::jv("msg", jval));
+    JLOGV(j_.trace(), "WebsocketClient::onReadMsg", jv("msg", jval));
     onMessageCallback_(jval);
 
     std::lock_guard l{m_};

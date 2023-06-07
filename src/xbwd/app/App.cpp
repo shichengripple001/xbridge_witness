@@ -2,6 +2,7 @@
 
 #include <xbwd/app/BuildInfo.h>
 #include <xbwd/app/DBInit.h>
+#include <xbwd/basics/StructuredLog.h>
 #include <xbwd/federator/Federator.h>
 #include <xbwd/rpc/RPCCall.h>
 #include <xbwd/rpc/ServerHandler.h>
@@ -86,9 +87,7 @@ App::App(
     catch (std::exception const& e)
     {
         JLOGV(
-            j_.fatal(),
-            "Exception while creating app ",
-            ripple::jv("what", e.what()));
+            j_.fatal(), "Exception while creating app ", jv("what", e.what()));
         work_.reset();
         throw;
     }
@@ -255,8 +254,8 @@ App::logRotation()
             JLOGV(
                 j_.warn(),
                 "Log rotation thread",
-                ripple::jv("error", ec.value()),
-                ripple::jv("msg", ec.message()));
+                jv("error", ec.value()),
+                jv("msg", ec.message()));
             continue;
         }
 

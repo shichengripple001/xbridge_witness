@@ -19,6 +19,7 @@
 
 #include <xbwd/core/DatabaseCon.h>
 
+#include <xbwd/basics/StructuredLog.h>
 #include <xbwd/core/SociDB.h>
 
 #include <ripple/basics/Log.h>
@@ -50,8 +51,8 @@ DatabaseCon::DatabaseCon(
             JLOGV(
                 j_.fatal(),
                 "can't create db path",
-                ripple::jv("error", ec.message()),
-                ripple::jv("path", pParent.string()));
+                jv("error", ec.message()),
+                jv("path", pParent.string()));
 
             throw std::runtime_error(
                 "can't create db path, error: " + ec.message());
