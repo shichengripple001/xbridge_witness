@@ -115,12 +115,15 @@ WebsocketClient::~WebsocketClient()
 void
 WebsocketClient::connect()
 {
+    auto const thread_local tid = gettid();
+
     std::lock_guard<std::mutex> l(shutdownM_);
     if (isShutdown_)
         return;
 
     try
     {
+        rb_.clear();
         // TODO: Change all the beast::IP:Endpoints to boost endpoints
         stream_.connect(ep_);
         peerClosed_ = false;
@@ -133,12 +136,13 @@ WebsocketClient::connect()
             ep_.address().to_string() + ":" + std::to_string(ep_.port()), "/");
         ws_.async_read(
             rb_,
-            strand_.wrap(std::bind(
-                &WebsocketClient::onReadMsg, this, std::placeholders::_1)));
+            std::bind(
+                &WebsocketClient::onReadMsg, this, std::placeholders::_1));
         onConnectCallback_();
         JLOGV(
             j_.info(),
             "WebsocketClient connected to",
+            jv("tid", tid),
             jv("ip", ep_.address()),
             jv("port", ep_.port()));
     }
@@ -181,6 +185,8 @@ WebsocketClient::send(std::string const& cmd, Json::Value params)
 void
 WebsocketClient::onReadMsg(error_code const& ec)
 {
+    auto const thread_local tid = gettid();
+
     if (ec)
     {
         JLOGV(j_.trace(), "WebsocketClient::onReadMsg error", jv("ec", ec));
@@ -192,18 +198,20 @@ WebsocketClient::onReadMsg(error_code const& ec)
         return;
     }
 
-    Json::Value jval;
-    Json::Reader jr;
-    jr.parse(buffer_string(rb_.data()), jval);
-    rb_.consume(rb_.size());
-    JLOGV(j_.trace(), "WebsocketClient::onReadMsg", jv("msg", jval));
-    onMessageCallback_(jval);
-
-    std::lock_guard l{m_};
+    auto rb = std::move(rb_);
     ws_.async_read(
         rb_,
-        strand_.wrap(std::bind(
-            &WebsocketClient::onReadMsg, this, std::placeholders::_1)));
+        std::bind(&WebsocketClient::onReadMsg, this, std::placeholders::_1));
+
+    Json::Value jval;
+    Json::Reader jr;
+    auto const s = buffer_string(rb.data());
+    jr.parse(s, jval);
+
+    JLOGV(
+        j_.trace(), "WebsocketClient::onReadMsg", jv("tid", tid), jv("msg", s));
+
+    onMessageCallback_(jval);
 }
 
 void

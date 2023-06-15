@@ -166,6 +166,7 @@ set(HEADERS
   src/xbwd/app/Config.h
   src/xbwd/app/DBInit.h
   src/xbwd/basics/ChainTypes.h
+  src/xbwd/basics/StructuredLog.h
   src/xbwd/basics/ThreadSaftyAnalysis.h
   src/xbwd/client/WebsocketClient.h
   src/xbwd/client/ChainListener.h

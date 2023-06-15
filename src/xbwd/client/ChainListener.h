@@ -41,13 +41,12 @@ class WebsocketClient;
 class ChainListener : public std::enable_shared_from_this<ChainListener>
 {
 private:
-    const ChainType chainType_;
+    ChainType const chainType_;
 
     ripple::STXChainBridge const bridge_;
-    std::string witnessAccountStr_;
-    std::weak_ptr<Federator> federator_;
-    std::optional<ripple::AccountID> signingAccount_;
-    mutable std::mutex m_;
+    std::string const witnessAccountStr_;
+    std::weak_ptr<Federator> const federator_;
+    std::optional<ripple::AccountID> const signingAccount_;
     beast::Journal j_;
 
     std::shared_ptr<WebsocketClient> wsClient_;
@@ -80,7 +79,7 @@ public:
     stopHistoricalTxns();
 
     Json::Value
-    getInfo() const EXCLUDES(m_);
+    getInfo() const;
 
     /**
      * send a RPC and call the callback with the RPC result
@@ -104,7 +103,7 @@ public:
      * @param v the response
      */
     void
-    processTx(Json::Value const& v) noexcept;
+    processTx(Json::Value const& v) const noexcept;
 
 private:
     void
@@ -114,26 +113,26 @@ private:
     onConnect();
 
     void
-    processMessage(Json::Value const& msg) EXCLUDES(m_);
+    processMessage(Json::Value const& msg) const;
 
     void
-    processAccountInfo(Json::Value const& msg) noexcept;
+    processAccountInfo(Json::Value const& msg) const noexcept;
 
     void
-    processSigningAccountInfo(Json::Value const& msg) noexcept;
+    processSigningAccountInfo(Json::Value const& msg) const noexcept;
 
     void
-    processSignerListSet(Json::Value const& msg) noexcept;
+    processSignerListSet(Json::Value const& msg) const noexcept;
 
     void
-    processAccountSet(Json::Value const& msg) noexcept;
+    processAccountSet(Json::Value const& msg) const noexcept;
 
     void
-    processSetRegularKey(Json::Value const& msg) noexcept;
+    processSetRegularKey(Json::Value const& msg) const noexcept;
 
     template <class E>
     void
-    pushEvent(E&& e) REQUIRES(m_);
+    pushEvent(E&& e) const;
 };
 
 }  // namespace xbwd

@@ -107,8 +107,6 @@ ChainListener::onConnect()
             params[ripple::jss::accounts].append(self->witnessAccountStr_);
         }
         self->send("subscribe", params);
-
-        self->stopHistory_ = false;
     };
 
     auto mainFlow = [self = shared_from_this(), doorAccStr, doorAccInfoCb]() {
@@ -188,7 +186,7 @@ ChainListener::send(
 
 template <class E>
 void
-ChainListener::pushEvent(E&& e)
+ChainListener::pushEvent(E&& e) const
 {
     static_assert(std::is_rvalue_reference_v<decltype(e)>, "");
 
@@ -285,9 +283,10 @@ isDeletedAccCnt(Json::Value const& meta, std::uint64_t createCnt)
 }  // namespace
 
 void
-ChainListener::processMessage(Json::Value const& msg)
+ChainListener::processMessage(Json::Value const& msg) const
 {
-    const auto chainName = to_string(chainType_);
+    auto const thread_local tid = gettid();
+    auto const chainName = to_string(chainType_);
 
     auto ignore_ret = [&](std::string_view reason, auto&&... v) {
         JLOGV(
@@ -312,16 +311,14 @@ ChainListener::processMessage(Json::Value const& msg)
     if (isHistory && stopHistory_)
         return ignore_ret(
             "stopped processing historical tx",
+            jv("tid", tid),
             jv(ripple::jss::account_history_tx_index.c_str(),
                *txnHistoryIndex));
-
-    // Even though this lock has a large scope, this function does very little
-    // processing and should run relatively quickly
-    std::lock_guard l{m_};
 
     JLOGV(
         j_.trace(),
         "chain listener process message",
+        jv("tid", tid),
         jv("chain_name", chainName),
         jv("msg", msg.toStyledString()));
 
@@ -704,7 +701,7 @@ processSignerListSetGeneral(
 }  // namespace
 
 void
-ChainListener::processAccountInfo(Json::Value const& msg) noexcept
+ChainListener::processAccountInfo(Json::Value const& msg) const noexcept
 {
     std::string const chainName = to_string(chainType_);
     std::string_view const errTopic = "ignoring account_info message";
@@ -804,7 +801,7 @@ ChainListener::processAccountInfo(Json::Value const& msg) noexcept
 }
 
 void
-ChainListener::processSigningAccountInfo(Json::Value const& msg) noexcept
+ChainListener::processSigningAccountInfo(Json::Value const& msg) const noexcept
 {
     std::string const chainName = to_string(chainType_);
     std::string_view const errTopic = "ignoring signing account_info message";
@@ -877,7 +874,7 @@ ChainListener::processSigningAccountInfo(Json::Value const& msg) noexcept
 }
 
 void
-ChainListener::processSignerListSet(Json::Value const& msg) noexcept
+ChainListener::processSignerListSet(Json::Value const& msg) const noexcept
 {
     std::string const chainName = to_string(chainType_);
     std::string_view const errTopic = "ignoring SignerListSet message";
@@ -954,7 +951,7 @@ ChainListener::processSignerListSet(Json::Value const& msg) noexcept
 }
 
 void
-ChainListener::processAccountSet(Json::Value const& msg) noexcept
+ChainListener::processAccountSet(Json::Value const& msg) const noexcept
 {
     std::string const chainName = to_string(chainType_);
     std::string_view const errTopic = "ignoring AccountSet message";
@@ -1031,7 +1028,7 @@ ChainListener::processAccountSet(Json::Value const& msg) noexcept
 }
 
 void
-ChainListener::processSetRegularKey(Json::Value const& msg) noexcept
+ChainListener::processSetRegularKey(Json::Value const& msg) const noexcept
 {
     std::string const chainName = to_string(chainType_);
     std::string_view const errTopic = "ignoring SetRegularKey message";
@@ -1115,7 +1112,7 @@ ChainListener::processSetRegularKey(Json::Value const& msg) noexcept
 }
 
 void
-ChainListener::processTx(Json::Value const& v) noexcept
+ChainListener::processTx(Json::Value const& v) const noexcept
 {
     std::string const chainName = to_string(chainType_);
     std::string_view const errTopic = "ignoring tx RPC response";
@@ -1263,8 +1260,6 @@ ChainListener::processTx(Json::Value const& v) noexcept
 Json::Value
 ChainListener::getInfo() const
 {
-    std::lock_guard l{m_};
-
     // TODO
     Json::Value ret{Json::objectValue};
     return ret;
