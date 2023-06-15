@@ -40,6 +40,8 @@ BasicApp::~BasicApp()
 
     for (auto& t : threads_)
         t.join();
+
+    LoggerQueue::instance().shutdown();
 }
 
 App::App(
