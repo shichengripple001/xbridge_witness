@@ -31,10 +31,11 @@
 
 #include <boost/beast/websocket.hpp>
 
-#include <condition_variable>
+#include <chrono>
 #include <iostream>
-#include <string>
 #include <unordered_map>
+
+using namespace std::chrono_literals;
 
 namespace xbwd {
 
@@ -84,7 +85,7 @@ WebsocketClient::shutdown()
 {
     cleanup();
     std::unique_lock l{shutdownM_};
-    shutdownCv_.wait(l, [this] { return isShutdown_; });
+    shutdownCv_.wait(l, [this] { return isShutdown_.load(); });
 }
 
 WebsocketClient::WebsocketClient(
@@ -104,19 +105,20 @@ WebsocketClient::WebsocketClient(
     , headers_(headers)
     , onConnectCallback_(onConnect)
     , j_{j}
+    , callbackThread_(&WebsocketClient::runCallbacks, this)
 {
 }
 
 WebsocketClient::~WebsocketClient()
 {
     shutdown();
+    if (callbackThread_.joinable())
+        callbackThread_.join();
 }
 
 void
 WebsocketClient::connect()
 {
-    auto const thread_local tid = gettid();
-
     std::lock_guard<std::mutex> l(shutdownM_);
     if (isShutdown_)
         return;
@@ -142,7 +144,6 @@ WebsocketClient::connect()
         JLOGV(
             j_.info(),
             "WebsocketClient connected to",
-            jv("tid", tid),
             jv("ip", ep_.address()),
             jv("port", ep_.port()));
     }
@@ -185,8 +186,6 @@ WebsocketClient::send(std::string const& cmd, Json::Value params)
 void
 WebsocketClient::onReadMsg(error_code const& ec)
 {
-    auto const thread_local tid = gettid();
-
     if (ec)
     {
         JLOGV(j_.trace(), "WebsocketClient::onReadMsg error", jv("ec", ec));
@@ -198,20 +197,19 @@ WebsocketClient::onReadMsg(error_code const& ec)
         return;
     }
 
-    auto rb = std::move(rb_);
+    {
+        // copy here to save rb_ allocated memory
+        auto s = buffer_string(rb_.data());
+
+        std::lock_guard l(messageMut_);
+        receivingQueue_.push_back(std::move(s));
+        messageCv_.notify_one();
+    }
+
+    rb_.clear();
     ws_.async_read(
         rb_,
         std::bind(&WebsocketClient::onReadMsg, this, std::placeholders::_1));
-
-    Json::Value jval;
-    Json::Reader jr;
-    auto const s = buffer_string(rb.data());
-    jr.parse(s, jval);
-
-    JLOGV(
-        j_.trace(), "WebsocketClient::onReadMsg", jv("tid", tid), jv("msg", s));
-
-    onMessageCallback_(jval);
 }
 
 void
@@ -235,6 +233,59 @@ WebsocketClient::reconnect()
 void
 WebsocketClient::onReadDone()
 {
+}
+
+void
+WebsocketClient::runCallbacks()
+{
+    std::uint64_t maxSize = 0;
+
+    for (; !isShutdown_;)
+    {
+        {
+            std::unique_lock l{messageMut_};
+            if (receivingQueue_.empty())
+                messageCv_.wait_for(l, 50ms);
+            processingQueue_.swap(receivingQueue_);
+        }
+
+        auto const x = processingQueue_.size();
+        if (x > 10000)
+        {
+            JLOGV(
+                j_.debug(),
+                "WebsocketClient::runCallbacks",
+                jv("size of queue", processingQueue_.size()));
+        }
+        if (x > maxSize)
+        {
+            maxSize = x;
+            JLOGV(
+                j_.trace(),
+                "WebsocketClient::runCallbacks",
+                jv("Updated maxQueueSize", maxSize));
+        }
+
+        for (auto& s : processingQueue_)
+        {
+            if (isShutdown_)
+                break;
+
+            JLOGV(j_.trace(), "WebsocketClient::runCallbacks", jv("msg", s));
+
+            Json::Value jval;
+            Json::Reader jr;
+            jr.parse(s, jval);
+            onMessageCallback_(jval);
+        }
+
+        processingQueue_.clear();
+    }
+
+    JLOGV(
+        j_.trace(),
+        "WebsocketClient::runCallbacks finished",
+        jv("maxQueueSize", maxSize));
 }
 
 }  // namespace xbwd

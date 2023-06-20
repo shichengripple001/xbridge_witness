@@ -32,8 +32,10 @@
 
 #include <chrono>
 #include <condition_variable>
+#include <deque>
 #include <functional>
 #include <memory>
+#include <string>
 
 namespace xbwd {
 
@@ -51,7 +53,7 @@ class WebsocketClient : public std::enable_shared_from_this<WebsocketClient>
 
     // mutex for shutdown
     std::mutex shutdownM_;
-    bool isShutdown_ = false;
+    std::atomic_bool isShutdown_ = false;
     std::condition_variable shutdownCv_;
 
     boost::asio::io_service& ios_;
@@ -61,7 +63,7 @@ class WebsocketClient : public std::enable_shared_from_this<WebsocketClient>
         m_) ws_;
     boost::beast::multi_buffer rb_;
 
-    std::atomic<bool> peerClosed_{true};
+    std::atomic_bool peerClosed_{true};
 
     std::function<void(Json::Value const&)> onMessageCallback_;
     std::atomic<std::uint32_t> nextId_{0};
@@ -71,6 +73,14 @@ class WebsocketClient : public std::enable_shared_from_this<WebsocketClient>
     std::unordered_map<std::string, std::string> const headers_;
     std::function<void()> onConnectCallback_;
     beast::Journal j_;
+
+    std::mutex messageMut_;
+    std::condition_variable messageCv_;
+    std::deque<std::string> receivingQueue_, processingQueue_;
+    std::thread callbackThread_;
+
+    void
+    runCallbacks();
 
     void
     cleanup();

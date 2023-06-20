@@ -285,7 +285,6 @@ isDeletedAccCnt(Json::Value const& meta, std::uint64_t createCnt)
 void
 ChainListener::processMessage(Json::Value const& msg) const
 {
-    auto const thread_local tid = gettid();
     auto const chainName = to_string(chainType_);
 
     auto ignore_ret = [&](std::string_view reason, auto&&... v) {
@@ -311,14 +310,12 @@ ChainListener::processMessage(Json::Value const& msg) const
     if (isHistory && stopHistory_)
         return ignore_ret(
             "stopped processing historical tx",
-            jv("tid", tid),
             jv(ripple::jss::account_history_tx_index.c_str(),
                *txnHistoryIndex));
 
     JLOGV(
         j_.trace(),
         "chain listener process message",
-        jv("tid", tid),
         jv("chain_name", chainName),
         jv("msg", msg.toStyledString()));
 

@@ -1517,6 +1517,8 @@ Federator::submitTxn(SubmissionPtr&& submission, ChainType dstChain)
         jv("dst chain", to_string(dstChain)),
         jv("commitAttests", attestedIDs.first),
         jv("createAttests", attestedIDs.second),
+        jv("lastLedgerSeq", submission->lastLedgerSeq_),
+        jv("accountSqn", submission->accountSqn_),
         jv(submission->getLogName(), submission->getJson()));
 
     if (submission->numAttestations() == 0)
@@ -1705,7 +1707,7 @@ Federator::txnSubmitLoop()
             if (accountInfo.isMember(ripple::jss::result) &&
                 accountInfo[ripple::jss::result].isMember("account_data"))
             {
-                auto const ad =
+                auto const& ad =
                     accountInfo[ripple::jss::result]["account_data"];
                 if (ad.isMember(ripple::jss::Sequence) &&
                     ad[ripple::jss::Sequence].isIntegral())
