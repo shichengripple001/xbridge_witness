@@ -76,7 +76,7 @@ class WebsocketClient : public std::enable_shared_from_this<WebsocketClient>
 
     std::mutex messageMut_;
     std::condition_variable messageCv_;
-    std::deque<std::string> receivingQueue_, processingQueue_;
+    std::deque<boost::beast::multi_buffer> receivingQueue_, processingQueue_;
     std::thread callbackThread_;
 
     void

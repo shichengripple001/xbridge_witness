@@ -188,9 +188,17 @@ WebsocketClient::onReadMsg(error_code const& ec)
 {
     if (ec)
     {
-        JLOGV(j_.trace(), "WebsocketClient::onReadMsg error", jv("ec", ec));
+        JLOGV(j_.error(), "WebsocketClient::onReadMsg error", jv("ec", ec));
         if (ec == boost::beast::websocket::error::closed)
+        {
             peerClosed_ = true;
+            auto const& reason = ws_.reason();
+            JLOGV(
+                j_.error(),
+                "WebsocketClient::onReadMsg close reason",
+                jv("code", reason.code),
+                jv("msg", reason.reason));
+        }
 
         std::lock_guard<std::mutex> l(shutdownM_);
         reconnect();
@@ -198,11 +206,8 @@ WebsocketClient::onReadMsg(error_code const& ec)
     }
 
     {
-        // copy here to save rb_ allocated memory
-        auto s = buffer_string(rb_.data());
-
         std::lock_guard l(messageMut_);
-        receivingQueue_.push_back(std::move(s));
+        receivingQueue_.push_back(std::move(rb_));
         messageCv_.notify_one();
     }
 
@@ -242,6 +247,7 @@ WebsocketClient::runCallbacks()
 
     for (; !isShutdown_;)
     {
+        processingQueue_.clear();
         {
             std::unique_lock l{messageMut_};
             if (receivingQueue_.empty())
@@ -250,40 +256,39 @@ WebsocketClient::runCallbacks()
         }
 
         auto const x = processingQueue_.size();
-        if (x > 10000)
-        {
-            JLOGV(
-                j_.debug(),
-                "WebsocketClient::runCallbacks",
-                jv("size of queue", processingQueue_.size()));
-        }
+
         if (x > maxSize)
         {
             maxSize = x;
             JLOGV(
-                j_.trace(),
+                j_.info(),
                 "WebsocketClient::runCallbacks",
                 jv("Updated maxQueueSize", maxSize));
         }
+        else if (x)
+        {
+            JLOGV(
+                j_.debug(),
+                "WebsocketClient::runCallbacks",
+                jv("size of queue", x));
+        }
 
-        for (auto& s : processingQueue_)
+        for (auto const& rb : processingQueue_)
         {
             if (isShutdown_)
                 break;
 
+            auto const s = buffer_string(rb.data());
             JLOGV(j_.trace(), "WebsocketClient::runCallbacks", jv("msg", s));
-
             Json::Value jval;
             Json::Reader jr;
             jr.parse(s, jval);
             onMessageCallback_(jval);
         }
-
-        processingQueue_.clear();
     }
 
     JLOGV(
-        j_.trace(),
+        j_.info(),
         "WebsocketClient::runCallbacks finished",
         jv("maxQueueSize", maxSize));
 }
