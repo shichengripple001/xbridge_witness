@@ -690,6 +690,13 @@ Federator::tryFinishInitSync(ChainType const ct)
     }
 }
 
+bool
+Federator::isSyncing() const
+{
+    return initSync_[ChainType::locking].syncing_ ||
+        initSync_[ChainType::issuing].syncing_;
+}
+
 void
 Federator::onEvent(event::XChainCommitDetected const& e)
 {
@@ -702,17 +709,24 @@ Federator::onEvent(event::XChainCommitDetected const& e)
         jv("dst chain", to_string(dstChain)),
         jv("event", e.toJson()));
 
-    if (initSync_[dstChain].syncing_)
+    if (isSyncing())
     {
         if (!e.rpcOrder_)
+        {
+            JLOGV(j_.error(), "no rpc order", jv("event", e.toJson()));
             return;
+        }
         initSync(dstChain, e.txnHash_, *e.rpcOrder_, e);
         return;
     }
 
     if (e.rpcOrder_ && *e.rpcOrder_ < initSync_[dstChain].rpcOrder_)
     {
-        // don't need older ones
+        JLOGV(
+            j_.info(),
+            "skip older",
+            jv("event", e.toJson()),
+            jv("initSync rpcOrder", initSync_[dstChain].rpcOrder_));
         return;
     }
 
@@ -900,17 +914,24 @@ Federator::onEvent(event::XChainAccountCreateCommitDetected const& e)
         jv("dst chain", to_string(dstChain)),
         jv("event", e.toJson()));
 
-    if (initSync_[dstChain].syncing_)
+    if (isSyncing())
     {
         if (!e.rpcOrder_)
+        {
+            JLOGV(j_.error(), "no rpc order", jv("event", e.toJson()));
             return;
+        }
         initSync(dstChain, e.txnHash_, *e.rpcOrder_, e);
         return;
     }
 
     if (e.rpcOrder_ && *e.rpcOrder_ < initSync_[dstChain].rpcOrder_)
     {
-        // don't need older ones
+        JLOGV(
+            j_.info(),
+            "skip older",
+            jv("event", e.toJson()),
+            jv("initSync rpcOrder", initSync_[dstChain].rpcOrder_));
         return;
     }
 
@@ -1257,7 +1278,7 @@ Federator::onEvent(event::NewLedger const& e)
         return;
     }
 
-    if (!autoSubmit_[ct])
+    if (!autoSubmit_[ct] || isSyncing())
         return;
 
     bool notify = false;
@@ -1440,15 +1461,15 @@ Federator::pushAttOnSubmitTxn(
         {
             for (auto const& claim : curClaimAtts_[chainType])
             {
-                auto p =
-                    SubmissionPtr(new SubmissionClaim(0, 0, bridge, claim));
+                auto p = SubmissionPtr(new SubmissionClaim(
+                    0, 0, networkID_[chainType], bridge, claim));
                 txns_[chainType].emplace_back(std::move(p));
             }
 
             for (auto const& create : curCreateAtts_[chainType])
             {
-                auto p = SubmissionPtr(
-                    new SubmissionCreateAccount(0, 0, bridge, create));
+                auto p = SubmissionPtr(new SubmissionCreateAccount(
+                    0, 0, networkID_[chainType], bridge, create));
                 txns_[chainType].emplace_back(std::move(p));
             }
         }
@@ -1700,10 +1721,6 @@ Federator::txnSubmitLoop()
         }
 
         auto callback = [&, ct = chain](Json::Value const& accountInfo) {
-            JLOGV(
-                j_.trace(),
-                "txn submit account info",
-                jv("accountInfo", accountInfo));
             if (accountInfo.isMember(ripple::jss::result) &&
                 accountInfo[ripple::jss::result].isMember("account_data"))
             {
@@ -1956,7 +1973,7 @@ Federator::pullAndAttestTx(
     Json::Value& result)
 {
     // TODO multi bridge
-    if (initSync_[otherChain(ct)].syncing_)
+    if (isSyncing())
     {
         result["error"] = "syncing";
         return;
@@ -2034,11 +2051,21 @@ Federator::checkSigningKey(
     }
 }
 
+void
+Federator::setNetwordID(std::uint32_t networkID, ChainType ct)
+{
+    networkID_[ct] = networkID;
+}
+
 Submission::Submission(
-    uint32_t lastLedgerSeq,
-    uint32_t accountSqn,
+    std::uint32_t lastLedgerSeq,
+    std::uint32_t accountSqn,
+    std::uint32_t networkID,
     std::string_view const logName)
-    : lastLedgerSeq_(lastLedgerSeq), accountSqn_(accountSqn), logName_(logName)
+    : lastLedgerSeq_(lastLedgerSeq)
+    , accountSqn_(accountSqn)
+    , networkID_(networkID)
+    , logName_(logName)
 {
 }
 
@@ -2098,11 +2125,12 @@ SubmissionBatch::getSignedTxn(
 #endif
 
 SubmissionClaim::SubmissionClaim(
-    uint32_t lastLedgerSeq,
-    uint32_t accountSqn,
+    std::uint32_t lastLedgerSeq,
+    std::uint32_t accountSqn,
+    std::uint32_t networkID,
     ripple::STXChainBridge const& bridge,
     ripple::Attestations::AttestationClaim const& claim)
-    : Submission(lastLedgerSeq, accountSqn, "claim")
+    : Submission(lastLedgerSeq, accountSqn, networkID, "claim")
     , bridge_(bridge)
     , claim_(claim)
 {
@@ -2145,17 +2173,19 @@ SubmissionClaim::getSignedTxn(
         Json::StaticString(nullptr),
         accountSqn_,
         lastLedgerSeq_,
+        networkID_,
         fee,
         txn.keypair,
         j);
 }
 
 SubmissionCreateAccount::SubmissionCreateAccount(
-    uint32_t lastLedgerSeq,
-    uint32_t accountSqn,
+    std::uint32_t lastLedgerSeq,
+    std::uint32_t accountSqn,
+    std::uint32_t networkID,
     ripple::STXChainBridge const& bridge,
     ripple::Attestations::AttestationCreateAccount const& create)
-    : Submission(lastLedgerSeq, accountSqn, "createAccount")
+    : Submission(lastLedgerSeq, accountSqn, networkID, "createAccount")
     , bridge_(bridge)
     , create_(create)
 {
@@ -2198,6 +2228,7 @@ SubmissionCreateAccount::getSignedTxn(
         Json::StaticString(nullptr),
         accountSqn_,
         lastLedgerSeq_,
+        networkID_,
         fee,
         txn.keypair,
         j);
