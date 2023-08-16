@@ -30,7 +30,6 @@
 #include <ripple/basics/XRPAmount.h>
 #include <ripple/basics/strHex.h>
 #include <ripple/json/Output.h>
-#include <ripple/json/json_get_or_throw.h>
 #include <ripple/json/json_writer.h>
 #include <ripple/protocol/AccountID.h>
 #include <ripple/protocol/LedgerFormats.h>
@@ -38,6 +37,7 @@
 #include <ripple/protocol/STAmount.h>
 #include <ripple/protocol/TER.h>
 #include <ripple/protocol/TxFlags.h>
+#include <ripple/protocol/json_get_or_throw.h>
 #include <ripple/protocol/jss.h>
 
 #include <charconv>
