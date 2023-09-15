@@ -4,8 +4,8 @@
 #include <xbwd/rpc/RPCCall.h>
 
 #include <ripple/basics/StringUtilities.h>
+#include <ripple/basics/ThreadUtilities.h>
 #include <ripple/basics/base64.h>
-#include <ripple/beast/core/CurrentThreadName.h>
 #include <ripple/beast/core/SemanticVersion.h>
 #include <ripple/beast/unit_test.h>
 #include <ripple/beast/unit_test/dstream.hpp>
@@ -181,7 +181,7 @@ main(int argc, char** argv)
             config->logSilent = true;
 
             using namespace std::literals;
-            beast::setCurrentThreadName(
+            ripple::this_thread::set_name(
                 xbwd::build_info::serverName + ": rpc"s);
 
             Json::Value jv;

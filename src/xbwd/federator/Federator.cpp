@@ -26,8 +26,8 @@
 #include <xbwd/client/RpcResultParse.h>
 #include <xbwd/federator/TxnSupport.h>
 
+#include <ripple/basics/ThreadUtilities.h>
 #include <ripple/basics/strHex.h>
-#include <ripple/beast/core/CurrentThreadName.h>
 #include <ripple/json/Output.h>
 #include <ripple/json/json_reader.h>
 #include <ripple/json/json_writer.h>
@@ -508,12 +508,12 @@ Federator::start()
     running_ = true;
 
     threads_[lt_event] = std::thread([this]() {
-        beast::setCurrentThreadName("FederatorEvents");
+        ripple::this_thread::set_name("FederatorEvents");
         this->mainLoop();
     });
 
     threads_[lt_txnSubmit] = std::thread([this]() {
-        beast::setCurrentThreadName("FederatorTxns");
+        ripple::this_thread::set_name("FederatorTxns");
         this->txnSubmitLoop();
     });
 }
