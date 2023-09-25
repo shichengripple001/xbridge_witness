@@ -1382,6 +1382,12 @@ ChainListener::processTx(Json::Value const& v) const
     }
 }
 
+std::uint32_t
+ChainListener::getProcessedLedger() const
+{
+    return ledgerProcessedDoor_;
+}
+
 void
 ChainListener::processAccountTx(Json::Value const& msg)
 {

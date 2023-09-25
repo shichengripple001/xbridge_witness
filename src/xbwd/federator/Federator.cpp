@@ -1305,10 +1305,12 @@ Federator::onEvent(event::NewLedger const& e)
     {
         std::lock_guard l{txnsMutex_};
         auto& subs = submitted_[ct];
+        unsigned const ledgerIndex =
+            chains_[ct].listener_->getProcessedLedger();
         // add expired txn to errored_ for resubmit
-        auto notInclude =
-            std::find_if(subs.begin(), subs.end(), [&](auto const& s) {
-                return s->lastLedgerSeq_ > e.ledgerIndex_;
+        auto notInclude = std::find_if(
+            subs.begin(), subs.end(), [ledgerIndex](auto const& s) {
+                return s->lastLedgerSeq_ > ledgerIndex;
             });
         while (subs.begin() != notInclude)
         {
@@ -1319,6 +1321,12 @@ Federator::onEvent(event::NewLedger const& e)
                 front->retriesAllowed_--;
                 front->accountSqn_ = 0;
                 front->lastLedgerSeq_ = 0;
+                JLOGV(
+                    j_.warn(),
+                    "Ledger TTL expired, move to errored",
+                    jv("chain", to_string(ct)),
+                    jv("processedLedger", ledgerIndex),
+                    jv("tx", front->getJson()));
                 errored_[ct].emplace_back(std::move(front));
             }
             else

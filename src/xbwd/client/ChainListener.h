@@ -29,6 +29,7 @@
 #include <boost/asio/io_service.hpp>
 #include <boost/asio/ip/address.hpp>
 
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -100,8 +101,8 @@ private:
     // last ledger requested for new tx
     unsigned ledgerReqMax_ = 0;
     // last ledger that was processed for Door account (in case of errors /
-    // disconnects)
-    unsigned ledgerProcessedDoor_ = 0;
+    // disconnects). Will be requested from the other thread.
+    std::atomic_uint ledgerProcessedDoor_ = 0;
     // last ledger that was processed for Signing account (in case of errors /
     // disconnects)
     unsigned ledgerProcessedSign_ = 0;
@@ -160,6 +161,9 @@ public:
      */
     void
     processTx(Json::Value const& v) const;
+
+    std::uint32_t
+    getProcessedLedger() const;
 
 private:
     void
