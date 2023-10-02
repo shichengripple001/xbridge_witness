@@ -296,7 +296,6 @@ checkLedger(ChainType chainType, Json::Value const& msg)
             msg[ripple::jss::ledger_index].isIntegral() &&
             msg.isMember(ripple::jss::reserve_base) &&
             msg.isMember(ripple::jss::reserve_inc) &&
-            msg.isMember(ripple::jss::fee_ref) &&
             msg.isMember(ripple::jss::validated_ledgers))
         {
             return event::NewLedger{
