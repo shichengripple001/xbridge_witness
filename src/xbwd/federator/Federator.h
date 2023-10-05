@@ -20,6 +20,7 @@
 
 #include <xbwd/app/Config.h>
 #include <xbwd/basics/ChainTypes.h>
+#include <xbwd/basics/StructuredLog.h>
 #include <xbwd/basics/ThreadSaftyAnalysis.h>
 #include <xbwd/client/ChainListener.h>
 #include <xbwd/federator/FederatorEvents.h>
@@ -493,7 +494,7 @@ private:
         App& app,
         boost::asio::io_service& ios,
         config::Config const& config,
-        beast::Journal j);
+        ripple::Logs& l);
 
     std::size_t
     maxAttests() const;
@@ -504,6 +505,6 @@ make_Federator(
     App& app,
     boost::asio::io_service& ios,
     config::Config const& config,
-    beast::Journal j);
+    ripple::Logs& l);
 
 }  // namespace xbwd

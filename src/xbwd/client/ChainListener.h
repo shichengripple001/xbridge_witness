@@ -62,11 +62,12 @@ struct HistoryProcessor
     // Ledger that divide transactions on historical and new
     unsigned startupLedger_ = 0;
 
-    // requesting ledgers in batch and check transactions after every batch
+    // Requesting ledgers in batch and check transactions after every batch
     // request
     unsigned const requestLedgerBatch_ = 100;
     unsigned toRequestLedger_ = 0;
 
+    // Minimal ledger validated by rippled. Retrieved from server_info
     unsigned minValidatedLedger_ = 0;
 
     void
@@ -79,9 +80,9 @@ private:
     ChainType const chainType_;
 
     ripple::STXChainBridge const bridge_;
-    std::string const witnessAccountStr_;
+    std::string const submitAccountStr_;
     std::weak_ptr<Federator> const federator_;
-    std::optional<ripple::AccountID> const signingAccount_;
+    std::optional<ripple::AccountID> const signAccount_;
     beast::Journal j_;
 
     std::shared_ptr<WebsocketClient> wsClient_;
@@ -105,7 +106,7 @@ private:
     std::atomic_uint ledgerProcessedDoor_ = 0;
     // last ledger that was processed for Signing account (in case of errors /
     // disconnects)
-    unsigned ledgerProcessedSign_ = 0;
+    std::atomic_uint ledgerProcessedSubmit_ = 0;
     // To determine ledger boundary acros consecutive requests for given
     // account.
     std::int32_t prevLedgerIndex_ = 0;
@@ -119,9 +120,9 @@ public:
     ChainListener(
         ChainType chainType,
         ripple::STXChainBridge const sidechain,
-        std::optional<ripple::AccountID> submitAccountOpt,
+        std::optional<ripple::AccountID> submitAccount,
         std::weak_ptr<Federator>&& federator,
-        std::optional<ripple::AccountID> signingAccount,
+        std::optional<ripple::AccountID> signAccount,
         beast::Journal j);
 
     virtual ~ChainListener();
@@ -163,7 +164,10 @@ public:
     processTx(Json::Value const& v) const;
 
     std::uint32_t
-    getProcessedLedger() const;
+    getDoorProcessedLedger() const;
+
+    std::uint32_t
+    getSubmitProcessedLedger() const;
 
 private:
     void

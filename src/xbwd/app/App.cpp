@@ -78,8 +78,7 @@ App::App(
 
     try
     {
-        federator_ = make_Federator(
-            *this, get_io_service(), *config_, logs_.journal("Federator"));
+        federator_ = make_Federator(*this, get_io_service(), *config_, logs_);
 
         serverHandler_ = std::make_unique<rpc::ServerHandler>(
             *this, get_io_service(), logs_.journal("ServerHandler"));

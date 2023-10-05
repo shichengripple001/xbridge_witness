@@ -55,10 +55,10 @@ make_Federator(
     App& app,
     boost::asio::io_service& ios,
     config::Config const& config,
-    beast::Journal j)
+    ripple::Logs& l)
 {
-    auto r =
-        std::make_shared<Federator>(Federator::PrivateTag{}, app, config, j);
+    auto r = std::make_shared<Federator>(
+        Federator::PrivateTag{}, app, config, l.journal("Federator"));
 
     auto getSubmitAccount =
         [&](ChainType chainType) -> std::optional<ripple::AccountID> {
@@ -79,7 +79,7 @@ make_Federator(
             getSubmitAccount(ChainType::locking),
             r,
             config.signingAccount,
-            j);
+            l.journal("LListener"));
     std::shared_ptr<ChainListener> sidechainListener =
         std::make_shared<ChainListener>(
             ChainType::issuing,
@@ -87,7 +87,7 @@ make_Federator(
             getSubmitAccount(ChainType::issuing),
             r,
             config.signingAccount,
-            j);
+            l.journal("IListener"));
     r->init(
         ios,
         config.lockingChainConfig.chainIp,
@@ -874,7 +874,7 @@ Federator::onEvent(event::XChainCommitDetected const& e)
             jv("table_name", tblName),
             jv("success", success),
             jv("ledger_seq", e.ledgerSeq_),
-            jv("claim_id", e.claimID_),
+            jv("claim_id", fmt::format("{:x}", e.claimID_)),
             jv("amt",
                e.deliveredAmt_ ? e.deliveredAmt_->getFullText()
                                : std::string("no delivered amt")),
@@ -1061,7 +1061,7 @@ Federator::onEvent(event::XChainAccountCreateCommitDetected const& e)
             jv("table_name", tblName),
             jv("success", success),
             jv("ledger_seq", e.ledgerSeq_),
-            jv("create_count", e.createCount_),
+            jv("create_count", fmt::format("{:x}", e.createCount_)),
             jv("amt",
                e.deliveredAmt_ ? e.deliveredAmt_->getFullText()
                                : std::string("no delivered amt")),
@@ -1146,6 +1146,7 @@ forAttestIDs(
         batch.claims().begin(),
         batch.claims().end(),
         [&](auto batchStart, auto batchEnd) -> int {
+            commitAttests << std::hex;
             for (auto i = batchStart; i != batchEnd; ++i)
             {
                 commitAttests << ":" << i->claimID;
@@ -1158,6 +1159,7 @@ forAttestIDs(
         batch.creates().begin(),
         batch.creates().end(),
         [&](auto batchStart, auto batchEnd) -> int {
+            createAttests << std::hex;
             for (auto i = batchStart; i != batchEnd; ++i)
             {
                 createAttests << ":" << i->createCount;
@@ -1180,7 +1182,7 @@ forAttestIDs(
     std::stringstream commitAttests;
 
     auto const& claimID(claim.claimID);
-    commitAttests << ":" << claimID;
+    commitAttests << ":" << std::hex << claimID;
     commitFunc(claimID);
 
     return {commitAttests.str(), std::string()};
@@ -1195,7 +1197,7 @@ forAttestIDs(
     std::stringstream createAttests;
 
     auto const& createCount(create.createCount);
-    createAttests << ":" << createCount;
+    createAttests << ":" << std::hex << createCount;
     createFunc(createCount);
 
     return {std::string(), createAttests.str()};
@@ -1280,11 +1282,17 @@ void
 Federator::onEvent(event::NewLedger const& e)
 {
     auto const ct = e.chainType_;
+    unsigned const doorLedgerIndex =
+        chains_[ct].listener_->getDoorProcessedLedger();
+    unsigned const submitLedgerIndex =
+        chains_[ct].listener_->getSubmitProcessedLedger();
 
     JLOGV(
         j_.trace(),
         "onEvent NewLedger",
         jv("dbLedgerSqn", initSync_[ct].dbLedgerSqn_),
+        jv("processedDoorLedger", doorLedgerIndex),
+        jv("processedSubmitLedger", submitLedgerIndex),
         jv("event", e.toJson()));
 
     ledgerIndexes_[ct].store(e.ledgerIndex_);
@@ -1305,12 +1313,11 @@ Federator::onEvent(event::NewLedger const& e)
     {
         std::lock_guard l{txnsMutex_};
         auto& subs = submitted_[ct];
-        unsigned const ledgerIndex =
-            chains_[ct].listener_->getProcessedLedger();
+
         // add expired txn to errored_ for resubmit
         auto notInclude = std::find_if(
-            subs.begin(), subs.end(), [ledgerIndex](auto const& s) {
-                return s->lastLedgerSeq_ > ledgerIndex;
+            subs.begin(), subs.end(), [submitLedgerIndex](auto const& s) {
+                return s->lastLedgerSeq_ > submitLedgerIndex;
             });
         while (subs.begin() != notInclude)
         {
@@ -1325,7 +1332,7 @@ Federator::onEvent(event::NewLedger const& e)
                     j_.warn(),
                     "Ledger TTL expired, move to errored",
                     jv("chain", to_string(ct)),
-                    jv("processedLedger", ledgerIndex),
+                    jv("lastLedgerSeq", front->lastLedgerSeq_),
                     jv("tx", front->getJson()));
                 errored_[ct].emplace_back(std::move(front));
             }

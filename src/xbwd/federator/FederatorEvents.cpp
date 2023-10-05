@@ -32,7 +32,7 @@ namespace {
 std::string
 to_hex(std::uint64_t i)
 {
-    return fmt::format("{:016x}", i);
+    return fmt::format("{:x}", i);
 }
 
 }  // namespace
