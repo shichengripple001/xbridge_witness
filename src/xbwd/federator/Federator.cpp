@@ -26,8 +26,8 @@
 #include <xbwd/client/RpcResultParse.h>
 #include <xbwd/federator/TxnSupport.h>
 
-#include <ripple/basics/ThreadUtilities.h>
 #include <ripple/basics/strHex.h>
+#include <ripple/beast/core/CurrentThreadName.h>
 #include <ripple/json/Output.h>
 #include <ripple/json/json_reader.h>
 #include <ripple/json/json_writer.h>
@@ -508,12 +508,12 @@ Federator::start()
     running_ = true;
 
     threads_[lt_event] = std::thread([this]() {
-        ripple::this_thread::set_name("FederatorEvents");
+        beast::setCurrentThreadName("FederatorEvents");
         this->mainLoop();
     });
 
     threads_[lt_txnSubmit] = std::thread([this]() {
-        ripple::this_thread::set_name("FederatorTxns");
+        beast::setCurrentThreadName("FederatorTxns");
         this->txnSubmitLoop();
     });
 }
@@ -1566,6 +1566,14 @@ Federator::pushAtt(
 void
 Federator::submitTxn(SubmissionPtr&& submission, ChainType dstChain)
 {
+    if (submission->numAttestations() == 0)
+        return;
+
+    // already verified txnSubmit before call submitTxn()
+    config::TxnSubmit const& txnSubmit = *chains_[dstChain].txnSubmit_;
+    ripple::XRPAmount fee{ledgerFees_[dstChain].load() + FeeExtraDrops};
+    ripple::STTx const toSubmit = submission->getSignedTxn(txnSubmit, fee, j_);
+
     auto const attestedIDs = submission->forAttestIDs();
     JLOGV(
         j_.trace(),
@@ -1575,15 +1583,9 @@ Federator::submitTxn(SubmissionPtr&& submission, ChainType dstChain)
         jv("createAttests", attestedIDs.second),
         jv("lastLedgerSeq", submission->lastLedgerSeq_),
         jv("accountSqn", submission->accountSqn_),
+        jv("hash",
+           to_string(toSubmit.getHash(ripple::HashPrefix::transactionID))),
         jv(submission->getLogName(), submission->getJson()));
-
-    if (submission->numAttestations() == 0)
-        return;
-
-    // already verified txnSubmit before call submitTxn()
-    config::TxnSubmit const& txnSubmit = *chains_[dstChain].txnSubmit_;
-    ripple::XRPAmount fee{ledgerFees_[dstChain].load() + FeeExtraDrops};
-    ripple::STTx const toSubmit = submission->getSignedTxn(txnSubmit, fee, j_);
 
     Json::Value const request = [&] {
         Json::Value r;

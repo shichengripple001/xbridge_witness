@@ -25,7 +25,7 @@ if(Ripple_SRC AND Ripple_LIBRARY)
       IMPORTED_LOCATION "${Ripple_LIBRARY}")
     target_link_libraries (Ripple::xrpl_core INTERFACE
       ${RIPPLE_BIN_DIR}/src/ed25519-donna/libed25519.a
-      ${RIPPLE_BIN_DIR}/src/secp256k1/libsecp256k1.a)
+      ${RIPPLE_BIN_DIR}/src/secp256k1/src/libsecp256k1.a)
   endif()
 endif()
 
