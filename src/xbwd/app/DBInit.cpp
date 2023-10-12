@@ -12,10 +12,11 @@ xChainDBName()
     return r;
 }
 
+// Use the source that produce the event to get the table name
 std::string const&
-xChainTableName(ChainDir dir)
+xChainTableName(ChainType src)
 {
-    if (dir == ChainDir::lockingToIssuing)
+    if (src == ChainType::locking)
     {
         static std::string const r{"XChainTxnLockingToIssuing"};
         return r;
@@ -25,9 +26,9 @@ xChainTableName(ChainDir dir)
 }
 
 std::string const&
-xChainCreateAccountTableName(ChainDir dir)
+xChainCreateAccountTableName(ChainType src)
 {
-    if (dir == ChainDir::lockingToIssuing)
+    if (src == ChainType::locking)
     {
         static std::string const r{"XChainTxnCreateAccountLocking"};
         return r;
@@ -105,7 +106,7 @@ xChainDBInit()
                 LedgerSeq         BIGINT UNSIGNED);
         )sql";
 
-        for (auto cd : {ChainDir::lockingToIssuing, ChainDir::issuingToLocking})
+        for (auto cd : {ChainType::locking, ChainType::issuing})
         {
             r.push_back(fmt::format(
                 tblFmtStr, fmt::arg("table_name", xChainTableName(cd))));

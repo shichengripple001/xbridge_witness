@@ -19,6 +19,8 @@
 
 #include <xbwd/federator/FederatorEvents.h>
 
+#include <ripple/protocol/jss.h>
+
 #include <fmt/core.h>
 
 #include <string_view>
@@ -41,6 +43,7 @@ Json::Value
 XChainCommitDetected::toJson() const
 {
     Json::Value result{Json::objectValue};
+    result["chainType"] = to_string(chainType_);
     result["eventType"] = "XChainCommitDetected";
     result["src"] = toBase58(src_);
     if (otherChainDst_)
@@ -59,6 +62,7 @@ Json::Value
 XChainAccountCreateCommitDetected::toJson() const
 {
     Json::Value result{Json::objectValue};
+    result["chainType"] = to_string(chainType_);
     result["eventType"] = "XChainAccountCreateCommitDetected";
     result["src"] = toBase58(src_);
     result["otherChainDst"] = toBase58(otherChainDst_);
@@ -77,6 +81,7 @@ Json::Value
 HeartbeatTimer::toJson() const
 {
     Json::Value result{Json::objectValue};
+    result["chainType"] = to_string(chainType_);
     result["eventType"] = "HeartbeatTimer";
     return result;
 }
@@ -86,14 +91,17 @@ XChainTransferResult::toJson() const
 {
     Json::Value result{Json::objectValue};
     result["eventType"] = "XChainTransferResult";
-    result["dir"] = to_string(dir_);
+    result["chainType"] = to_string(chainType_);
     result["dst"] = toBase58(dst_);
     if (deliveredAmt_)
         result["deliveredAmt"] =
             deliveredAmt_->getJson(ripple::JsonOptions::none);
     result["claimID"] = to_hex(claimID_);
     result["txnHash"] = to_string(txnHash_);
-    result["ter"] = transHuman(ter_);
+    std::string token, text;
+    transResultInfo(ter_, token, text);
+    result[ripple::jss::engine_result] = token;
+    result["ter"] = text;
     if (rpcOrder_)
         result["rpcOrder"] = *rpcOrder_;
     return result;
@@ -107,7 +115,10 @@ XChainAttestsResult::toJson() const
     result["chainType"] = to_string(chainType_);
     result["accountSequence"] = accountSqn_;
     result["txnHash"] = to_string(txnHash_);
-    result["ter"] = transHuman(ter_);
+    std::string token, text;
+    transResultInfo(ter_, token, text);
+    result[ripple::jss::engine_result] = token;
+    result["ter"] = text;
 
     result["isHistory"] = isHistory_;
     result["type"] = static_cast<int>(type_);
@@ -144,6 +155,7 @@ Json::Value
 XChainSignerListSet::toJson() const
 {
     Json::Value result{Json::objectValue};
+    result["chainType"] = to_string(chainType_);
     result["eventType"] = "XChainSignerListSet";
     result["masterDoorID"] = masterDoorID_.isNonZero()
         ? ripple::toBase58(masterDoorID_)
@@ -159,6 +171,7 @@ Json::Value
 XChainSetRegularKey::toJson() const
 {
     Json::Value result{Json::objectValue};
+    result["chainType"] = to_string(chainType_);
     result["eventType"] = "XChainSetRegularKey";
     result["masterDoorID"] = masterDoorID_.isNonZero()
         ? ripple::toBase58(masterDoorID_)
@@ -174,6 +187,7 @@ Json::Value
 XChainAccountSet::toJson() const
 {
     Json::Value result{Json::objectValue};
+    result["chainType"] = to_string(chainType_);
     result["eventType"] = "XChainAccountSet";
     result["masterDoorID"] = masterDoorID_.isNonZero()
         ? ripple::toBase58(masterDoorID_)

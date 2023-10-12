@@ -10,7 +10,6 @@
 namespace xbwd {
 
 using ChainType = ripple::STXChainBridge::ChainType;
-enum class ChainDir { issuingToLocking, lockingToIssuing };
 
 inline std::string
 to_string(ChainType ct)
@@ -21,18 +20,6 @@ to_string(ChainType ct)
         return r;
     }
     static std::string r{"issuing"};
-    return r;
-}
-
-inline std::string
-to_string(ChainDir cd)
-{
-    if (cd == ChainDir::lockingToIssuing)
-    {
-        static std::string r{"lockingToIssuing"};
-        return r;
-    }
-    static std::string r{"issuingToLocking"};
     return r;
 }
 

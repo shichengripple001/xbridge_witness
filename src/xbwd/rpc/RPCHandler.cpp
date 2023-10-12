@@ -54,7 +54,7 @@ doSelectAll(
     App& app,
     Json::Value const& in,
     Json::Value& result,
-    ChainDir const chainDir)
+    ChainType const chain)
 
 {
     // TODO: Remove me
@@ -62,7 +62,7 @@ doSelectAll(
 
     result[ripple::jss::request] = in;
 
-    auto const& tblName = db_init::xChainTableName(chainDir);
+    auto const& tblName = db_init::xChainTableName(chain);
 
     {
         auto session = app.getXChainTxnDB().checkoutDb();
@@ -152,7 +152,7 @@ doSelectAll(
                 sendingAccount,
                 sendingAmount,
                 rewardAccount,
-                chainDir == ChainDir::lockingToIssuing,
+                chain == ChainType::locking,
                 claimID,
                 optDst);
         }
@@ -186,13 +186,13 @@ doSelectAll(
 void
 doSelectAllLocking(App& app, Json::Value const& in, Json::Value& result)
 {
-    return doSelectAll(app, in, result, ChainDir::lockingToIssuing);
+    return doSelectAll(app, in, result, ChainType::locking);
 }
 
 void
 doSelectAllIssuing(App& app, Json::Value const& in, Json::Value& result)
 {
-    return doSelectAll(app, in, result, ChainDir::issuingToLocking);
+    return doSelectAll(app, in, result, ChainType::issuing);
 }
 
 void
@@ -234,12 +234,11 @@ doWitness(App& app, Json::Value const& in, Json::Value& result)
     auto const& sendingAmount = *optAmt;
     auto const& claimID = *optClaimID;
 
-    ChainDir const chainDir = (*optDoor == optBridge->lockingChainDoor())
-        ? ChainDir::lockingToIssuing
-        : ChainDir::issuingToLocking;
+    ChainType const ct = (*optDoor == optBridge->lockingChainDoor())
+        ? ChainType::locking
+        : ChainType::issuing;
 
-    if (chainDir == ChainDir::issuingToLocking &&
-        *optDoor != optBridge->issuingChainDoor())
+    if (ct == ChainType::issuing && *optDoor != optBridge->issuingChainDoor())
     {
         // TODO: Write log message
         // put expected value in the error message?
@@ -250,7 +249,7 @@ doWitness(App& app, Json::Value const& in, Json::Value& result)
         return;
     }
 
-    auto const& tblName = db_init::xChainTableName(chainDir);
+    auto const& tblName = db_init::xChainTableName(ct);
 
     {
         auto session = app.getXChainTxnDB().checkoutDb();
@@ -335,7 +334,7 @@ doWitness(App& app, Json::Value const& in, Json::Value& result)
                 sendingAccount,
                 sendingAmount,
                 rewardAccount,
-                chainDir == ChainDir::lockingToIssuing,
+                ct == ChainType::locking,
                 claimID,
                 optDst};
 
@@ -417,11 +416,10 @@ doWitnessAccountCreate(App& app, Json::Value const& in, Json::Value& result)
     auto const& createCount = *optCreateCount;
     auto const& dst = *optDst;
 
-    ChainDir const chainDir = (*optDoor == optBridge->lockingChainDoor())
-        ? ChainDir::lockingToIssuing
-        : ChainDir::issuingToLocking;
-    if (chainDir == ChainDir::issuingToLocking &&
-        *optDoor != optBridge->issuingChainDoor())
+    ChainType const ct = (*optDoor == optBridge->lockingChainDoor())
+        ? ChainType::locking
+        : ChainType::issuing;
+    if (ct == ChainType::issuing && *optDoor != optBridge->issuingChainDoor())
     {
         // TODO: Write log message
         // put expected value in the error message?
@@ -432,7 +430,7 @@ doWitnessAccountCreate(App& app, Json::Value const& in, Json::Value& result)
         return;
     }
 
-    auto const& tblName = db_init::xChainCreateAccountTableName(chainDir);
+    auto const& tblName = db_init::xChainCreateAccountTableName(ct);
 
     std::vector<std::uint8_t> const encodedBridge = [&] {
         ripple::Serializer s;
@@ -512,7 +510,7 @@ doWitnessAccountCreate(App& app, Json::Value const& in, Json::Value& result)
                 sendingAmount,
                 rewardAmount,
                 rewardAccount,
-                chainDir == ChainDir::lockingToIssuing,
+                ct == ChainType::locking,
                 createCount,
                 dst};
 

@@ -177,7 +177,7 @@ WebsocketClient::send(
     JLOGV(
         j_.trace(),
         "WebsocketClient::send",
-        jv("chain_name", chain),
+        jv("chainType", chain),
         jv("msg", params));
     try
     {

@@ -263,6 +263,10 @@ class Federator : public std::enable_shared_from_this<Federator>
         std::shared_ptr<ChainListener> listener_;
         ripple::AccountID rewardAccount_;
         std::optional<config::TxnSubmit> txnSubmit_;
+
+        // The hash of the latest event (from this chain) that require
+        // attestation from the previous session. The same as
+        // InitSync.dbTxnHash_ but can be set by operator in config file
         std::optional<ripple::uint256> lastAttestedCommitTx_;
 
         explicit Chain(config::ChainConfig const& config);
@@ -316,12 +320,29 @@ class Federator : public std::enable_shared_from_this<Federator>
 
     struct InitSync
     {
+        // Indicate that chain still processing history
         std::atomic<bool> syncing_{true};
+
+        // The hash of the latest event that require attestation from the
+        // previous session. Saved at the event chain side.
         ripple::uint256 dbTxnHash_;
+
+        // The latest ledger of the attestation sent in the previous session
+        // Saved at the attestation chain side.
         std::uint32_t dbLedgerSqn_{0u};
+
+        // Request to stop processing history
         bool historyDone_{false};
+
+        // Show whether the current ledger is more then TxnTTLLedgers ahead of
+        // the last attestation's ledger from previous session
         bool oldTxExpired_{false};
+
+        // History index, used for the events order checks
         std::int32_t rpcOrder_{std::numeric_limits<std::int32_t>::min()};
+
+        // Set of historical attestation. Fill through playing
+        // historical transactions.
         std::unordered_set<AttestedHistoryTx, ripple::hardened_hash<>>
             attestedTx_;
     };
@@ -486,6 +507,7 @@ private:
         std::uint64_t claimID,
         bool isCreateAccount);  // TODO add bridge
 
+    // send the attestations for the events from this chain
     void
     sendDBAttests(ChainType ct);
 
@@ -498,6 +520,9 @@ private:
 
     std::size_t
     maxAttests() const;
+
+    void
+    checkExpired(ChainType ct, std::uint32_t ledger);
 };
 
 std::shared_ptr<Federator>

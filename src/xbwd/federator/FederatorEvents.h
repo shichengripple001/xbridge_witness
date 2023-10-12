@@ -37,7 +37,8 @@ namespace event {
 // A cross chain transfer was detected on this federator
 struct XChainCommitDetected
 {
-    ChainDir dir_;
+    // Source of the event
+    ChainType chainType_;
     // Src account on the src chain
     ripple::AccountID src_;
     ripple::STXChainBridge bridge_;
@@ -58,7 +59,8 @@ struct XChainCommitDetected
 // A cross chain account create was detected on this federator
 struct XChainAccountCreateCommitDetected
 {
-    ChainDir dir_;
+    // Source of the event
+    ChainType chainType_;
     // Src account on the src chain
     ripple::AccountID src_;
     ripple::STXChainBridge bridge_;
@@ -79,17 +81,15 @@ struct XChainAccountCreateCommitDetected
 
 struct HeartbeatTimer
 {
+    ChainType chainType_;
     Json::Value
     toJson() const;
 };
 
 struct XChainTransferResult
 {
-    // direction is the direction of the triggering transaction.
-    // I.e. A "mainToSide" transfer result is a transaction that
-    // happens on the sidechain (the triggering transaction happended on the
-    // mainchain)
-    ChainDir dir_;
+    // Source of the event
+    ChainType chainType_;
     ripple::AccountID dst_;
     std::optional<ripple::STAmount> deliveredAmt_;
     std::uint64_t claimID_;

@@ -17,10 +17,10 @@ std::string const&
 xChainDBName();
 
 std::string const&
-xChainTableName(ChainDir dir);
+xChainTableName(ChainType chain);
 
 std::string const&
-xChainCreateAccountTableName(ChainDir dir);
+xChainCreateAccountTableName(ChainType chain);
 
 std::vector<std::string> const&
 xChainDBPragma();

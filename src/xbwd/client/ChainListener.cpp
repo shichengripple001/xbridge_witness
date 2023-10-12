@@ -177,7 +177,7 @@ ChainListener::send(
     // JLOGV(
     //     j_.trace(),
     //     "ChainListener send",
-    //     jv("chain_name", chainName),
+    //     jv("chainType", chainName),
     //     jv("command", cmd),
     //     jv("params", params));
 
@@ -224,7 +224,7 @@ ChainListener::onMessage(Json::Value const& msg)
         JLOGV(
             j_.trace(),
             "ChainListener onMessage, reply to a callback",
-            jv("chain_name", to_string(chainType_)),
+            jv("chainType", to_string(chainType_)),
             jv("msg", msg.toStyledString()));
         (*callbackOpt)(msg);
     }
@@ -320,7 +320,7 @@ ChainListener::processMessage(Json::Value const& msg)
         JLOGV(
             j_.trace(),
             "ignoring listener message",
-            jv("chain_name", chainName),
+            jv("chainType", chainName),
             jv("reason", reason),
             std::forward<decltype(v)>(v)...);
     };
@@ -345,7 +345,7 @@ ChainListener::processMessage(Json::Value const& msg)
     JLOGV(
         j_.trace(),
         "chain listener process message",
-        jv("chain_name", chainName),
+        jv("chainType", chainName),
         jv("msg", msg.toStyledString()));
 
     auto newLedgerEv = checkLedger(chainType_, msg);
@@ -429,7 +429,7 @@ ChainListener::processMessage(Json::Value const& msg)
                 j_.trace(),
                 "ledger boundary",
                 jv("seq", *lgrSeq),
-                jv("chain_name", chainName));
+                jv("chainType", chainName));
             return true;
         }
         return false;
@@ -437,14 +437,6 @@ ChainListener::processMessage(Json::Value const& msg)
 
     std::optional<ripple::STAmount> deliveredAmt =
         rpcResultParse::parseDeliveredAmt(transaction, meta);
-
-    auto const [chainDir, oppositeChainDir] =
-        [&]() -> std::pair<ChainDir, ChainDir> {
-        using enum ChainDir;
-        if (chainType_ == ChainType::locking)
-            return {issuingToLocking, lockingToIssuing};
-        return {lockingToIssuing, issuingToLocking};
-    }();
 
     switch (*txnTypeOpt)
     {
@@ -459,7 +451,7 @@ ChainListener::processMessage(Json::Value const& msg)
 
             using namespace event;
             XChainTransferResult e{
-                chainDir,
+                chainType_,
                 *dst,
                 deliveredAmt,
                 *claimID,
@@ -481,7 +473,7 @@ ChainListener::processMessage(Json::Value const& msg)
 
             using namespace event;
             XChainCommitDetected e{
-                oppositeChainDir,
+                chainType_,
                 *src,
                 *txnBridge,
                 deliveredAmt,
@@ -511,7 +503,7 @@ ChainListener::processMessage(Json::Value const& msg)
 
             using namespace event;
             XChainAccountCreateCommitDetected e{
-                oppositeChainDir,
+                chainType_,
                 *src,
                 *txnBridge,
                 deliveredAmt,
@@ -562,7 +554,7 @@ ChainListener::processMessage(Json::Value const& msg)
                 JLOGV(
                     j_.trace(),
                     "Attestation processing",
-                    jv("chain_name", chainName),
+                    jv("chainType", chainName),
                     jv("src", *src),
                     jv("dst",
                        !dst || !*dst ? std::string() : ripple::toBase58(*dst)),
@@ -628,18 +620,27 @@ ChainListener::processMessage(Json::Value const& msg)
         case XChainTxnType::SignerListSet: {
             if (txnSuccess && !isHistory)
                 processSignerListSet(transaction);
+            else
+                return ignoreRet(
+                    isHistory ? "skip in history mode" : "not success");
             return;
         }
         break;
         case XChainTxnType::AccountSet: {
             if (txnSuccess && !isHistory)
                 processAccountSet(transaction);
+            else
+                return ignoreRet(
+                    isHistory ? "skip in history mode" : "not success");
             return;
         }
         break;
         case XChainTxnType::SetRegularKey: {
             if (txnSuccess && !isHistory)
                 processSetRegularKey(transaction);
+            else
+                return ignoreRet(
+                    isHistory ? "skip in history mode" : "not success");
             return;
         }
         break;
@@ -659,7 +660,7 @@ processSignerListSetGeneral(
             j.warn(),
             errTopic,
             jv("reason", reason),
-            jv("chain_name", chainName),
+            jv("chainType", chainName),
             jv("msg", msg));
         return std::optional<std::unordered_set<ripple::AccountID>>();
     };
@@ -713,7 +714,7 @@ ChainListener::processAccountInfo(Json::Value const& msg) const
             j_.warn(),
             errTopic,
             jv("reason", reason),
-            jv("chain_name", chainName),
+            jv("chainType", chainName),
             jv("msg", msg));
         return false;
     };
@@ -802,7 +803,7 @@ ChainListener::processAccountInfo(Json::Value const& msg) const
             j_.warn(),
             errTopic,
             jv("exception", e.what()),
-            jv("chain_name", chainName),
+            jv("chainType", chainName),
             jv("msg", msg));
     }
     catch (...)
@@ -811,7 +812,7 @@ ChainListener::processAccountInfo(Json::Value const& msg) const
             j_.warn(),
             errTopic,
             jv("exception", "unknown exception"),
-            jv("chain_name", chainName),
+            jv("chainType", chainName),
             jv("msg", msg));
     }
 
@@ -829,7 +830,7 @@ ChainListener::processServerInfo(Json::Value const& msg)
             j_.warn(),
             errTopic,
             jv("reason", reason),
-            jv("chain_name", chainName));
+            jv("chainType", chainName));
     };
 
     try
@@ -883,7 +884,7 @@ ChainListener::processServerInfo(Json::Value const& msg)
         JLOGV(
             j_.info(),
             "server_info",
-            jv("chain_name", chainName),
+            jv("chainType", chainName),
             jv("minValidatedLedger", hp_.minValidatedLedger_),
             jv("networkID", networkID));
     }
@@ -893,7 +894,7 @@ ChainListener::processServerInfo(Json::Value const& msg)
             j_.warn(),
             errTopic,
             jv("exception", e.what()),
-            jv("chain_name", chainName),
+            jv("chainType", chainName),
             jv("msg", msg));
     }
     catch (...)
@@ -902,7 +903,7 @@ ChainListener::processServerInfo(Json::Value const& msg)
             j_.warn(),
             errTopic,
             jv("exception", "unknown exception"),
-            jv("chain_name", chainName),
+            jv("chainType", chainName),
             jv("msg", msg));
     }
 }
@@ -918,7 +919,7 @@ ChainListener::processSigningAccountInfo(Json::Value const& msg) const
             j_.warn(),
             errTopic,
             jv("reason", reason),
-            jv("chain_name", chainName),
+            jv("chainType", chainName),
             jv("msg", msg));
         return false;
     };
@@ -977,7 +978,7 @@ ChainListener::processSigningAccountInfo(Json::Value const& msg) const
             j_.warn(),
             errTopic,
             jv("exception", e.what()),
-            jv("chain_name", chainName),
+            jv("chainType", chainName),
             jv("msg", msg));
     }
     catch (...)
@@ -986,7 +987,7 @@ ChainListener::processSigningAccountInfo(Json::Value const& msg) const
             j_.warn(),
             errTopic,
             jv("exception", "unknown exception"),
-            jv("chain_name", chainName),
+            jv("chainType", chainName),
             jv("msg", msg));
     }
 
@@ -1004,7 +1005,7 @@ ChainListener::processSignerListSet(Json::Value const& msg) const
             j_.warn(),
             errTopic,
             jv("reason", reason),
-            jv("chain_name", chainName),
+            jv("chainType", chainName),
             jv("msg", msg));
     };
 
@@ -1056,7 +1057,7 @@ ChainListener::processSignerListSet(Json::Value const& msg) const
             j_.warn(),
             errTopic,
             jv("exception", e.what()),
-            jv("chain_name", chainName),
+            jv("chainType", chainName),
             jv("msg", msg));
     }
     catch (...)
@@ -1065,7 +1066,7 @@ ChainListener::processSignerListSet(Json::Value const& msg) const
             j_.warn(),
             errTopic,
             jv("exception", "unknown exception"),
-            jv("chain_name", chainName),
+            jv("chainType", chainName),
             jv("msg", msg));
     }
 }
@@ -1081,7 +1082,7 @@ ChainListener::processAccountSet(Json::Value const& msg) const
             j_.warn(),
             errTopic,
             jv("reason", reason),
-            jv("chain_name", chainName),
+            jv("chainType", chainName),
             jv("msg", msg));
     };
 
@@ -1122,7 +1123,7 @@ ChainListener::processAccountSet(Json::Value const& msg) const
                 j_.warn(),
                 "processing account set",
                 jv("warning", "Door account type mismatch"),
-                jv("chain_name", chainName),
+                jv("chainType", chainName),
                 jv("tx_type", to_string(evAccSet.chainType_)));
         }
         pushEvent(std::move(evAccSet));
@@ -1133,7 +1134,7 @@ ChainListener::processAccountSet(Json::Value const& msg) const
             j_.warn(),
             errTopic,
             jv("exception", e.what()),
-            jv("chain_name", chainName),
+            jv("chainType", chainName),
             jv("msg", msg));
     }
     catch (...)
@@ -1142,7 +1143,7 @@ ChainListener::processAccountSet(Json::Value const& msg) const
             j_.warn(),
             errTopic,
             jv("exception", "unknown exception"),
-            jv("chain_name", chainName),
+            jv("chainType", chainName),
             jv("msg", msg));
     }
 }
@@ -1158,7 +1159,7 @@ ChainListener::processSetRegularKey(Json::Value const& msg) const
             j_.warn(),
             errTopic,
             jv("reason", reason),
-            jv("chain_name", chainName),
+            jv("chainType", chainName),
             jv("msg", msg));
     };
 
@@ -1193,7 +1194,7 @@ ChainListener::processSetRegularKey(Json::Value const& msg) const
                 j_.warn(),
                 "processing account set",
                 jv("warning", "Door account type mismatch"),
-                jv("chain_name", chainName),
+                jv("chainType", chainName),
                 jv("tx_type", to_string(evSetKey.chainType_)));
         }
 
@@ -1217,7 +1218,7 @@ ChainListener::processSetRegularKey(Json::Value const& msg) const
             j_.warn(),
             errTopic,
             jv("exception", e.what()),
-            jv("chain_name", chainName),
+            jv("chainType", chainName),
             jv("msg", msg));
     }
     catch (...)
@@ -1226,7 +1227,7 @@ ChainListener::processSetRegularKey(Json::Value const& msg) const
             j_.warn(),
             errTopic,
             jv("exception", "unknown exception"),
-            jv("chain_name", chainName),
+            jv("chainType", chainName),
             jv("msg", msg));
     }
 }
@@ -1245,7 +1246,7 @@ ChainListener::processTx(Json::Value const& v) const
             j_.stream(severity),
             errTopic,
             jv("reason", reason),
-            jv("chain_name", chainName),
+            jv("chainType", chainName),
             jv("msg", v));
     };
 
@@ -1299,10 +1300,6 @@ ChainListener::processTx(Json::Value const& v) const
         std::optional<ripple::STAmount> deliveredAmt =
             rpcResultParse::parseDeliveredAmt(msg, meta);
 
-        auto const oppositeChainDir = chainType_ == ChainType::locking
-            ? ChainDir::lockingToIssuing
-            : ChainDir::issuingToLocking;
-
         switch (*txnTypeOpt)
         {
             case XChainTxnType::xChainCommit: {
@@ -1313,7 +1310,7 @@ ChainListener::processTx(Json::Value const& v) const
 
                 using namespace event;
                 XChainCommitDetected e{
-                    oppositeChainDir,
+                    chainType_,
                     *src,
                     *txnBridge,
                     deliveredAmt,
@@ -1341,7 +1338,7 @@ ChainListener::processTx(Json::Value const& v) const
 
                 using namespace event;
                 XChainAccountCreateCommitDetected e{
-                    oppositeChainDir,
+                    chainType_,
                     *src,
                     *txnBridge,
                     deliveredAmt,
@@ -1366,7 +1363,7 @@ ChainListener::processTx(Json::Value const& v) const
             j_.warn(),
             errTopic,
             jv("exception", e.what()),
-            jv("chain_name", chainName),
+            jv("chainType", chainName),
             jv("msg", v));
     }
     catch (...)
@@ -1375,7 +1372,7 @@ ChainListener::processTx(Json::Value const& v) const
             j_.warn(),
             errTopic,
             jv("exception", "unknown exception"),
-            jv("chain_name", chainName),
+            jv("chainType", chainName),
             jv("msg", v));
     }
 }
@@ -1407,7 +1404,7 @@ ChainListener::processAccountTx(Json::Value const& msg)
             JLOGV(
                 j_.info(),
                 "History mode off",
-                jv("chain_name", to_string(chainType_)));
+                jv("chainType", to_string(chainType_)));
         }
         else if (!requestContinue)
             requestLedgers();
@@ -1428,7 +1425,7 @@ ChainListener::processAccountTxHlp(Json::Value const& msg)
             j_.warn(),
             errTopic,
             jv("reason", reason),
-            jv("chain_name", chainName),
+            jv("chainType", chainName),
             jv("msg", msg),
             std::forward<decltype(ts)>(ts)...);
     };
@@ -1438,7 +1435,7 @@ ChainListener::processAccountTxHlp(Json::Value const& msg)
             j_.warn(),
             errTopic,
             jv("reason", reason),
-            jv("chain_name", chainName),
+            jv("chainType", chainName),
             std::forward<decltype(ts)>(ts)...);
     };
 
@@ -1677,7 +1674,7 @@ ChainListener::sendLedgerReq(unsigned cnt)
         JLOGV(
             j_.info(),
             "Finished requesting ledgers",
-            jv("chain_name", chainName),
+            jv("chainType", chainName),
             jv("finish_ledger", hp_.toRequestLedger_ + 1));
         return;
     }
@@ -1687,7 +1684,7 @@ ChainListener::sendLedgerReq(unsigned cnt)
         JLOGV(
             j_.info(),
             "History not completed, start requesting more ledgers",
-            jv("chain_name", chainName),
+            jv("chainType", chainName),
             jv("start_ledger", hp_.toRequestLedger_));
     }
 
@@ -1711,7 +1708,7 @@ ChainListener::processNewLedger(unsigned ledgerIdx)
         JLOGV(
             j_.info(),
             "Init startup ledger",
-            jv("chain_name", to_string(chainType_)),
+            jv("chainType", to_string(chainType_)),
             jv("startup_ledger", hp_.startupLedger_));
 
         if (!ledgerIdx)
@@ -1719,7 +1716,7 @@ ChainListener::processNewLedger(unsigned ledgerIdx)
             JLOGV(
                 j_.error(),
                 "New ledger invalid idx",
-                jv("chain_name", to_string(chainType_)),
+                jv("chainType", to_string(chainType_)),
                 jv("ledgerIdx", ledgerIdx));
             throw std::runtime_error("New ledger invalid idx");
         }
@@ -1760,7 +1757,7 @@ ChainListener::processNewLedger(unsigned ledgerIdx)
                     JLOGV(
                         self->j_.info(),
                         "History mode off, no bridge",
-                        jv("chain_name", to_string(self->chainType_)));
+                        jv("chainType", to_string(self->chainType_)));
                     self->hp_.state_ = HistoryProcessor::FINISHED;
                     self->pushEvent(event::EndOfHistory{self->chainType_});
                     return;
@@ -1782,7 +1779,7 @@ ChainListener::processNewLedger(unsigned ledgerIdx)
             JLOGV(
                 j_.warn(),
                 "Witness NOT initialized, waiting for ledgers",
-                jv("chain_name", to_string(chainType_)));
+                jv("chainType", to_string(chainType_)));
 
             auto serverInfoCb = [self = shared_from_this(),
                                  doorAccStr](Json::Value const& msg) {
