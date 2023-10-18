@@ -334,10 +334,6 @@ class Federator : public std::enable_shared_from_this<Federator>
         // Request to stop processing history
         bool historyDone_{false};
 
-        // Show whether the current ledger is more then TxnTTLLedgers ahead of
-        // the last attestation's ledger from previous session
-        bool oldTxExpired_{false};
-
         // History index, used for the events order checks
         std::int32_t rpcOrder_{std::numeric_limits<std::int32_t>::min()};
 
@@ -509,7 +505,7 @@ private:
 
     // send the attestations for the events from this chain
     void
-    sendDBAttests(ChainType ct);
+    readDBAttests(ChainType ct);
 
     friend std::shared_ptr<Federator>
     make_Federator(

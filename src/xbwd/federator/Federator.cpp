@@ -244,6 +244,8 @@ Federator::init(
 
     for (auto const ct : {ChainType::locking, ChainType::issuing})
     {
+        if (autoSubmit_[ct])
+            readDBAttests(ct);
         JLOGV(
             j_.info(),
             "Prepare init sync",
@@ -263,7 +265,7 @@ Federator::init(
 }
 
 void
-Federator::sendDBAttests(ChainType ct)
+Federator::readDBAttests(ChainType ct)
 {
     auto const oct = otherChain(ct);
     int commits = 0;
@@ -346,7 +348,7 @@ Federator::sendDBAttests(ChainType ct)
             {
                 JLOGV(
                     j_.warn(),
-                    "sendDBAttests bridge mismatch, skipping attestation",
+                    "readDBAttests bridge mismatch, skipping attestation",
                     jv("db bridge", bridge.getJson(ripple::JsonOptions::none)),
                     jv("current bridge",
                        bridge_.getJson(ripple::JsonOptions::none)));
@@ -354,7 +356,10 @@ Federator::sendDBAttests(ChainType ct)
             }
 
             // The attestation will be created by the other chain
-            pushAtt(
+            auto p = SubmissionPtr(new SubmissionClaim(
+                0,  // will be updated when new ledger arrive
+                0,  // will be updated if resubmitted
+                0,  // will be updated when NetworkID arrive
                 bridge,
                 ripple::Attestations::AttestationClaim{
                     signingAccount,
@@ -365,9 +370,12 @@ Federator::sendDBAttests(ChainType ct)
                     rewardAccount,
                     ct == ChainType::locking,
                     static_cast<std::uint64_t>(claimID),
-                    optDst},
-                oct,
-                true);
+                    optDst}));
+            {
+                std::lock_guard tl{txnsMutex_};
+                submitted_[oct].emplace_back(std::move(p));
+            }
+
             ++commits;
         }
     }
@@ -375,7 +383,7 @@ Federator::sendDBAttests(ChainType ct)
     {
         JLOGV(
             j_.fatal(),
-            "sendDBAttests error reading commit table.",
+            "readDBAttests error reading commit table.",
             jv("what", e.what()));
         throw;
     }
@@ -458,7 +466,7 @@ Federator::sendDBAttests(ChainType ct)
             {
                 JLOGV(
                     j_.warn(),
-                    "sendDBAttests bridge mismatch, skipping attestation",
+                    "readDBAttests bridge mismatch, skipping attestation",
                     jv("db bridge", bridge.getJson(ripple::JsonOptions::none)),
                     jv("current bridge",
                        bridge_.getJson(ripple::JsonOptions::none)));
@@ -466,7 +474,10 @@ Federator::sendDBAttests(ChainType ct)
             }
 
             // The attestation will be created by the other chain
-            pushAtt(
+            auto p = SubmissionPtr(new SubmissionCreateAccount(
+                0,  // will be updated when new ledger arrive
+                0,  // will be updated if resubmitted
+                0,  // will be updated when NetworkID arrive
                 bridge,
                 ripple::Attestations::AttestationCreateAccount{
                     signingAccount,
@@ -478,9 +489,12 @@ Federator::sendDBAttests(ChainType ct)
                     rewardAccount,
                     ct == ChainType::locking,
                     static_cast<std::uint64_t>(createCount),
-                    dstAccount},
-                oct,
-                true);
+                    dstAccount}));
+            {
+                std::lock_guard tl{txnsMutex_};
+                submitted_[oct].emplace_back(std::move(p));
+            }
+
             ++creates;
         }
     }
@@ -488,12 +502,12 @@ Federator::sendDBAttests(ChainType ct)
     {
         JLOGV(
             j_.fatal(),
-            "sendDBAttests error reading createAccount table.",
+            "readDBAttests error reading createAccount table.",
             jv("what", e.what()));
         throw;
     }
 
-    JLOG(j_.info()) << "sendDBAttests " << to_string(ct) << " commit "
+    JLOG(j_.info()) << "readDBAttests " << to_string(ct) << " commit "
                     << commits << " create account " << creates;
 }
 
@@ -644,7 +658,7 @@ Federator::tryFinishInitSync(ChainType const ct)
 {
     ChainType const oct = otherChain(ct);
 
-    if (!initSync_[ct].historyDone_ || !initSync_[ct].oldTxExpired_)
+    if (!initSync_[ct].historyDone_)
         return;
 
     if (initSync_[ct].syncing_)
@@ -673,9 +687,6 @@ Federator::tryFinishInitSync(ChainType const ct)
 
     for (auto const cht : {ChainType::locking, ChainType::issuing})
     {
-        if (autoSubmit_[cht])
-            sendDBAttests(cht);
-
         auto const ocht = otherChain(cht);
         auto& repl(replays_[cht]);
         unsigned del_cnt = 0;
@@ -1294,15 +1305,17 @@ Federator::onEvent(event::NewLedger const& e)
         jv("processedSubmitLedger", submitLedgerIndex),
         jv("event", e.toJson()));
 
-    ledgerIndexes_[ct].store(e.ledgerIndex_);
+    auto const prevIdx = ledgerIndexes_[ct].exchange(e.ledgerIndex_);
     ledgerFees_[ct].store(e.fee_);
 
-    if (initSync_[ct].syncing_)
+    // Fix TTL for tx from DB
+    if (!prevIdx)
     {
-        initSync_[ct].oldTxExpired_ =
-            e.ledgerIndex_ > initSync_[ct].dbLedgerSqn_;
-        tryFinishInitSync(ct);
-        return;
+        std::lock_guard l{txnsMutex_};
+        auto& subs = submitted_[ct];
+        for (auto& s : subs)
+            if (!s->lastLedgerSeq_)
+                s->lastLedgerSeq_ = e.ledgerIndex_ + TxnTTLLedgers;
     }
 
     if (!autoSubmit_[ct] || isSyncing())
@@ -2090,7 +2103,16 @@ Federator::checkSigningKey(
 void
 Federator::setNetworkID(std::uint32_t networkID, ChainType ct)
 {
-    networkID_[ct] = networkID;
+    if (networkID_[ct] != networkID)
+    {
+        networkID_[ct] = networkID;
+
+        // Fix NetworkID for tx from DB
+        std::lock_guard tl{txnsMutex_};
+        auto& subs(submitted_[ct]);
+        for (auto& s : subs)
+            s->networkID_ = networkID;
+    }
 }
 
 Submission::Submission(
