@@ -251,7 +251,7 @@ Federator::init(
             "Prepare init sync",
             jv("chainType", to_string(ct)),
             jv("DB ledgerSqn", initSync_[ct].dbLedgerSqn_),
-            jv("DB txHash ", initSync_[ct].dbTxnHash_),
+            jv("DB txHash", initSync_[ct].dbTxnHash_),
             jv("config txHash",
                chains_[ct].lastAttestedCommitTx_
                    ? to_string(*chains_[ct].lastAttestedCommitTx_)
@@ -1296,7 +1296,7 @@ Federator::onEvent(event::XChainAttestsResult const& e)
             j_.debug(),
             "XChainAttestsResult add attestation",
             jv("chainType", to_string(ct)),
-            jv("type", static_cast<int>(e.type_)),
+            jv("type", to_string(e.type_)),
             jv("src", e.src_),
             jv("dst", e.dst_),
             jv("createCount",
@@ -1305,6 +1305,12 @@ Federator::onEvent(event::XChainAttestsResult const& e)
             jv("claimID",
                e.claimID_ ? fmt::format("{:x}", *e.claimID_)
                           : std::string("0")));
+
+        // tryFinishInitSync
+        // This check can be put in any event processing function. But most
+        // likely for the destination chain (for which this check was created),
+        // it will fire here
+        checkProcessedLedger(ct);
     }
 }
 
@@ -1337,9 +1343,13 @@ Federator::onEvent(event::NewLedger const& e)
                 s->lastLedgerSeq_ = e.ledgerIndex_ + TxnTTLLedgers;
     }
 
+    // tryFinishInitSync
+    checkProcessedLedger(ct);
+
     if (!autoSubmit_[ct] || isSyncing())
         return;
 
+    saveProcessedLedger(ct, std::min(submitLedgerIndex, doorLedgerIndex));
     checkExpired(ct, submitLedgerIndex);
 }
 
@@ -1402,6 +1412,51 @@ Federator::checkExpired(ChainType ct, std::uint32_t ledger)
         std::lock_guard bl{batchMutex_};
         if (curClaimAtts_[ct].size() + curCreateAtts_[ct].size() > 0)
             pushAttOnSubmitTxn(bridge_, ct);
+    }
+}
+
+void
+Federator::checkProcessedLedger(ChainType ct)
+{
+    auto const historyProcessedLedger =
+        chains_[ct].listener_->getHistoryProcessedLedger();
+    // If last tx not set (expected for issuing side) then check last processed
+    // ledger
+    if (initSync_[ct].syncing_ && !initSync_[ct].historyDone_ &&
+        initSync_[ct].dbLedgerSqn_ && historyProcessedLedger &&
+        (historyProcessedLedger <= initSync_[ct].dbLedgerSqn_))
+    {
+        initSync_[ct].historyDone_ = true;
+        JLOGV(
+            j_.trace(),
+            "initSync found previous processed ledger",
+            jv("chain", to_string(ct)),
+            jv("dbLedger", initSync_[ct].dbLedgerSqn_),
+            jv("historyLedger", historyProcessedLedger));
+        tryFinishInitSync(ct);
+    }
+}
+
+void
+Federator::saveProcessedLedger(ChainType ct, std::uint32_t ledger)
+{
+    if (ledger > initSync_[ct].dbLedgerSqn_)
+    {
+        auto session = app_.getXChainTxnDB().checkoutDb();
+        auto const sql = fmt::format(
+            "UPDATE {} SET LedgerSeq = :ledger_sqn WHERE ChainType = "
+            ":chain_type;",
+            db_init::xChainSyncTable);
+        *session << sql, soci::use(ledger),
+            soci::use(static_cast<std::uint32_t>(ct));
+
+        initSync_[ct].dbLedgerSqn_ = ledger;
+
+        JLOGV(
+            j_.trace(),
+            "syncDB update processed ledger",
+            jv("chainType", to_string(ct)),
+            jv("ledger", ledger));
     }
 }
 
@@ -1877,21 +1932,6 @@ Federator::txnSubmitLoop()
                 ledgerIndexes_[submitChain].load() + TxnTTLLedgers;
             txn->lastLedgerSeq_ = lastLedgerSeq;
             txn->accountSqn_ = accountSqns_[submitChain]++;
-            {
-                // TODO move out of submit loop
-                auto session = app_.getXChainTxnDB().checkoutDb();
-                auto const sql = fmt::format(
-                    R"sql(UPDATE {table_name} SET LedgerSeq = :ledger_sqn WHERE ChainType = :chain_type;
-            )sql",
-                    fmt::arg("table_name", db_init::xChainSyncTable));
-                auto const chainType = static_cast<std::uint32_t>(submitChain);
-                *session << sql, soci::use(lastLedgerSeq), soci::use(chainType);
-                JLOGV(
-                    j_.trace(),
-                    "syncDB update ledgerSqn txnSubmitLoop",
-                    jv("chainType", to_string(submitChain)),
-                    jv("ledgerSqn", lastLedgerSeq));
-            }
             submitTxn(std::move(txn), submitChain);
         }
         localTxns.clear();

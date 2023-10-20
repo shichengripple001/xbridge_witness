@@ -70,6 +70,9 @@ struct HistoryProcessor
     // Minimal ledger validated by rippled. Retrieved from server_info
     unsigned minValidatedLedger_ = 0;
 
+    // History processed ledger
+    std::atomic_uint ledgerProcessed_ = 0;
+
     void
     clear();
 };
@@ -168,6 +171,9 @@ public:
 
     std::uint32_t
     getSubmitProcessedLedger() const;
+
+    std::uint32_t
+    getHistoryProcessedLedger() const;
 
 private:
     void

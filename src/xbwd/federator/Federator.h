@@ -342,8 +342,7 @@ class Federator : public std::enable_shared_from_this<Federator>
         // previous session. Saved at the event chain side.
         ripple::uint256 dbTxnHash_;
 
-        // The latest ledger of the attestation sent in the previous session
-        // Saved at the attestation chain side.
+        // The latest ledger that was fully processed in the previous session.
         std::uint32_t dbLedgerSqn_{0u};
 
         // Request to stop processing history
@@ -534,6 +533,12 @@ private:
 
     void
     checkExpired(ChainType ct, std::uint32_t ledger);
+
+    void
+    checkProcessedLedger(ChainType ct);
+
+    void
+    saveProcessedLedger(ChainType ct, std::uint32_t ledger);
 };
 
 std::shared_ptr<Federator>

@@ -41,6 +41,9 @@ enum class XChainTxnType {
     SetRegularKey
 };
 
+std::string
+to_string(XChainTxnType type);
+
 namespace rpcResultParse {
 bool
 fieldMatchesStr(Json::Value const& val, char const* field, char const* toMatch);

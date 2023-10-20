@@ -1394,6 +1394,12 @@ ChainListener::getSubmitProcessedLedger() const
     return ledgerProcessedSubmit_;
 }
 
+std::uint32_t
+ChainListener::getHistoryProcessedLedger() const
+{
+    return hp_.ledgerProcessed_;
+}
+
 void
 ChainListener::processAccountTx(Json::Value const& msg)
 {
@@ -1562,6 +1568,10 @@ ChainListener::processAccountTxHlp(Json::Value const& msg)
 
         // if (!isMarker && isLast && isHistorical)
         //     history[ripple::jss::account_history_tx_first] = true;
+
+        if ((hp_.state_ != HistoryProcessor::FINISHED) &&
+            (prevLedgerIndex_ != ledgerIdx))
+            hp_.ledgerProcessed_ = prevLedgerIndex_;
 
         bool const lgrBdr = (hp_.state_ != HistoryProcessor::FINISHED)
             ? prevLedgerIndex_ != ledgerIdx

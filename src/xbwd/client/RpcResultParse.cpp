@@ -25,6 +25,27 @@
 
 namespace xbwd {
 
+std::string
+to_string(XChainTxnType type)
+{
+    static std::array<
+        std::string,
+        static_cast<unsigned>(XChainTxnType::SetRegularKey) + 1> const TypeStr =
+        {"xChainCommit",
+         "xChainClaim",
+         "xChainAccountCreateCommit",
+#ifdef USE_BATCH_ATTESTATION
+         "xChainAddAttestationBatch",
+#endif
+         "xChainAddAccountCreateAttestation",
+         "xChainAddClaimAttestation",
+         "xChainCreateBridge",
+         "SignerListSet",
+         "AccountSet",
+         "SetRegularKey"};
+    return TypeStr[static_cast<unsigned>(type)];
+}
+
 namespace rpcResultParse {
 bool
 fieldMatchesStr(Json::Value const& val, char const* field, char const* toMatch)
