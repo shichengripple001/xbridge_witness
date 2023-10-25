@@ -1,13 +1,14 @@
 name: Greetings
 
-on: [pull_request_target, issues]
-
+on:
+  # Triggers the workflow on push or pull request events but only for the "main" branch
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
 jobs:
   greeting:
     runs-on: [self-hosted, heavy]
-    permissions:
-      issues: write
-      pull-requests: write
     steps:
     - name: Run a one-line script
       run: |
