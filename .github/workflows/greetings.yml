@@ -1,0 +1,15 @@
+name: Greetings
+
+on: [pull_request_target, issues]
+
+jobs:
+  greeting:
+    runs-on: [self-hosted, heavy]
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+    - name: Run a one-line script
+      run: |
+        echo hello
+      
